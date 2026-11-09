@@ -1,0 +1,387 @@
+"""静态匹配任务 DAG；创建组件仅为验证配置，不处理数据包。"""
+
+from dataclasses import dataclass
+from collections import deque
+import itertools
+import json
+import math
+from pathlib import Path
+from typing import Mapping
+
+from components.catalog import CapabilityMap, default_capability_map
+from components.implementations.runtime_registry import create_runtime_component
+from task_repr import (RefinementResult, SpecificationTask, TaskRepresentation,
+                       parse_external_task, refine_business_task, represent_task)
+from components.specs import load_component_specs, load_protocol_specs
+from .contracts import check_node_ports, validate_connection
+from .rules import MatchRuleError, adapt_parameters
+
+
+_KNOWN_UNSUPPORTED = {
+    "mti_mtd_fft": "complete MTI/MTD requires C22; C22 has no runtime implementation",
+    "ldpc_decoding": "C17 implements convolutional FEC only; LDPC has no runtime implementation",
+    "ofdm_timing_frequency_sync": "C07 supports known-preamble frame sync, not complete OFDM timing/frequency sync",
+    "ofdm_channel_equalization": "no runtime component implements OFDM channel equalization",
+}
+
+
+@dataclass(frozen=True)
+class MatchIssue:
+    """记录未匹配的节点或边，以及可供调用方展示的具体原因。"""
+
+    code: str
+    detail: str
+    node_id: str | None = None
+    cid: str | None = None
+    edge: tuple[str, str] | None = None
+
+    def to_dict(self) -> dict:
+        data = {"code": self.code, "detail": self.detail}
+        if self.node_id is not None:
+            data["node_id"] = self.node_id
+        if self.cid is not None:
+            data["cid"] = self.cid
+        if self.edge is not None:
+            data["edge"] = list(self.edge)
+        return data
+
+
+@dataclass(frozen=True)
+class ComponentBinding:
+    """节点选中的组件 CID 和已转换为运行组件参数名的配置。"""
+
+    cid: str
+    parameters: dict
+
+    def to_dict(self) -> dict:
+        return {"cid": self.cid, "parameters": self.parameters}
+
+
+@dataclass(frozen=True)
+class StaticMatchResult:
+    """静态方案；edges 仅包含通过节点和连接契约检查的边。"""
+
+    task_id: str
+    status: str
+    bindings: dict[str, ComponentBinding]
+    edges: tuple[tuple[str, str], ...]
+    unresolved: tuple[MatchIssue, ...]
+    refined_graph: dict | None = None
+    candidate_bindings: tuple[dict[str, ComponentBinding], ...] = ()
+    candidates_exhaustive: bool = True
+    execution_graph: dict | None = None
+    candidate_execution_graphs: tuple[dict, ...] = ()
+
+    def to_dict(self) -> dict:
+        result = {"task_id": self.task_id, "status": self.status,
+                "bindings": {key: value.to_dict() for key, value in self.bindings.items()},
+                "edges": [list(edge) for edge in self.edges],
+                "unresolved": [issue.to_dict() for issue in self.unresolved]}
+        if self.refined_graph is not None:
+            result["refined_graph"] = self.refined_graph
+            result["match_scope"] = "component_dag"
+        if self.candidate_bindings:
+            result["candidate_bindings"] = [
+                {key: value.to_dict() for key, value in option.items()}
+                for option in self.candidate_bindings]
+            result["candidates_exhaustive"] = self.candidates_exhaustive
+        if self.execution_graph is not None:
+            result["execution_graph"] = self.execution_graph
+            result["candidate_execution_graphs"] = list(self.candidate_execution_graphs)
+        return result
+
+
+@dataclass(frozen=True)
+class _Candidate:
+    binding: ComponentBinding
+    component: object
+
+
+def _build_execution_graph(task: SpecificationTask, bindings: dict[str, ComponentBinding]) -> dict:
+    """在匹配边界把规格图封装成不依赖原任务的组件执行图。"""
+    nodes = {node.node_id: node for node in task.G.nodes}
+    if set(nodes) != set(bindings):
+        raise ValueError("component graph does not bind every specification node")
+    incoming = {node_id: [] for node_id in nodes}
+    outgoing = {node_id: [] for node_id in nodes}
+    used_inputs = set()
+    edges = []
+    for edge in task.G.edges:
+        if edge.source not in nodes or edge.target not in nodes:
+            raise ValueError("component edge references an unknown node")
+        source, target = nodes[edge.source], nodes[edge.target]
+        if (edge.source_port not in source.outputs or edge.target_port not in target.inputs or
+                source.outputs[edge.source_port] != target.inputs[edge.target_port]):
+            raise ValueError("component edge ports have incompatible formats")
+        key = (edge.target, edge.target_port)
+        if key in used_inputs:
+            raise ValueError(f"component input port has multiple sources: {key}")
+        used_inputs.add(key)
+        incoming[edge.target].append(edge)
+        outgoing[edge.source].append(edge)
+        edges.append({**edge.to_dict(), "format": source.outputs[edge.source_port]})
+    pending = {node_id: len(value) for node_id, value in incoming.items()}
+    ready = deque(node_id for node_id in nodes if pending[node_id] == 0)
+    order = []
+    while ready:
+        node_id = ready.popleft()
+        order.append(node_id)
+        for edge in outgoing[node_id]:
+            pending[edge.target] -= 1
+            if pending[edge.target] == 0:
+                ready.append(edge.target)
+    if len(order) != len(nodes):
+        raise ValueError("component graph contains a dependency cycle")
+    boundaries = []
+    for boundary in task.G.boundaries:
+        direction = boundary["direction"]
+        candidates = [node for node in nodes.values()
+                      if not (incoming if direction == "source" else outgoing)[node.node_id]
+                      and ("node_id" not in boundary or boundary["node_id"] == node.node_id)
+                      and boundary["format"] in (node.inputs if direction == "source" else node.outputs).values()]
+        if len(candidates) != 1:
+            raise ValueError(f"{direction} boundary requires exactly one matching component endpoint")
+        node = candidates[0]
+        ports = node.inputs if direction == "source" else node.outputs
+        matching_ports = [name for name, fmt in ports.items() if fmt == boundary["format"]
+                          and ("port" not in boundary or boundary["port"] == name)]
+        if len(matching_ports) != 1:
+            raise ValueError(f"{direction} boundary requires exactly one matching port")
+        port = matching_ports[0]
+        boundaries.append({"direction": direction, "node_id": node.node_id,
+                           "port": port, "format": boundary["format"],
+                           "business_node_id": boundary["business_node_id"]})
+    covered = {(entry["node_id"], entry["port"]) for entry in boundaries if entry["direction"] == "source"}
+    missing = {(node.node_id, port) for node in nodes.values() for port in node.inputs
+               if (node.node_id, port) not in used_inputs | covered}
+    if missing:
+        raise ValueError(f"unconnected component inputs: {sorted(missing)}")
+    used_outputs = {(edge.source, edge.source_port) for edge in task.G.edges}
+    used_outputs |= {(entry["node_id"], entry["port"]) for entry in boundaries
+                     if entry["direction"] == "sink"}
+    missing_outputs = {(node.node_id, port) for node in nodes.values() for port in node.outputs
+                       if (node.node_id, port) not in used_outputs}
+    if missing_outputs:
+        raise ValueError(f"unconnected component outputs: {sorted(missing_outputs)}")
+    return {"task_id": task.task_id,
+            "semantics": {"family": task.S.family, "task_type": task.S.task_type,
+                          "direction": task.S.direction, "extension": task.S.extension},
+            "nodes": [{"id": node_id, "role": nodes[node_id].role,
+                       "business_node_id": nodes[node_id].business_node_id,
+                       "capability": nodes[node_id].capability,
+                       "cid": bindings[node_id].cid,
+                       "parameters": bindings[node_id].parameters,
+                       "specification_parameters": nodes[node_id].parameters,
+                       "inputs": nodes[node_id].inputs, "outputs": nodes[node_id].outputs}
+                      for node_id in order],
+            "edges": edges, "boundaries": boundaries, "topological_order": order}
+
+
+def _positive_integer(value, name):
+    if type(value) is not int or value < 1:
+        raise MatchRuleError("INVALID_PARAMETERS", f"{name} must be a positive integer")
+    return value
+
+
+def _signal_checks(task, node, candidate):
+    """检查任务声明的采样率、块长度与候选组件的处理规模是否一致。"""
+    p = node.parameters
+    config = candidate.binding.parameters
+    rate_mhz = p.get("sample_rate_mhz", task.S.extension.get("sample_rate_mhz"))
+    if rate_mhz is not None:
+        if type(rate_mhz) not in (int, float) or not math.isfinite(rate_mhz) or rate_mhz <= 0:
+            raise MatchRuleError("INVALID_PARAMETERS", "sample_rate_mhz must be positive and finite")
+        sample_rate_hz = rate_mhz * 1_000_000
+        if candidate.binding.cid == "C03" and abs(config["nco_frequency"]) >= sample_rate_hz / 2:
+            raise MatchRuleError("INVALID_PARAMETERS", "nco_frequency exceeds input Nyquist rate")
+        if candidate.binding.cid == "C27" and config.get("scan_bandwidth", 0) and config["scan_bandwidth"] > sample_rate_hz:
+            raise MatchRuleError("INVALID_PARAMETERS", "scan_bandwidth exceeds sample rate")
+    input_length = p.get("input_block_length")
+    output_length = p.get("output_block_length")
+    if input_length is not None:
+        _positive_integer(input_length, "input_block_length")
+    if output_length is not None:
+        _positive_integer(output_length, "output_block_length")
+    cid = candidate.binding.cid
+    if cid in ("C08", "C27") and input_length is None:
+        raise MatchRuleError("NEEDS_PARAMETERS", "input_block_length is needed to verify the FFT window")
+    if cid == "C21" and input_length is None and config.get("pulse_length") is None:
+        raise MatchRuleError("NEEDS_PARAMETERS", "input_block_length or pulse_length is needed to verify the echo frame")
+    if cid == "C07" and input_length is not None and input_length < len(config["preamble"]):
+        raise MatchRuleError("INTERFACE_MISMATCH", "input block is shorter than the preamble")
+    if cid in ("C08", "C27"):
+        length = config["fft_size"] if cid == "C08" else config["fft_length"]
+        if cid == "C08" and input_length is not None and input_length != length:
+            raise MatchRuleError("INTERFACE_MISMATCH", "FFT input block must equal fft_size")
+        if cid == "C27" and input_length is not None and input_length < length:
+            raise MatchRuleError("INTERFACE_MISMATCH", "PSD input block is shorter than fft_length")
+        if cid == "C27" and output_length is not None and output_length != length:
+            raise MatchRuleError("INTERFACE_MISMATCH", "PSD output block must equal fft_length")
+    if cid == "C03" and input_length is not None and output_length is not None:
+        expected = (input_length + config["decimation"] - 1) // config["decimation"]
+        if output_length != expected:
+            raise MatchRuleError("INTERFACE_MISMATCH", f"DDC output length must be {expected}")
+    if cid == "C05" and input_length is not None and output_length is not None and input_length != output_length:
+        raise MatchRuleError("INTERFACE_MISMATCH", "digital filter preserves block length")
+    if cid == "C21" and rate_mhz is not None:
+        bandwidth_mhz = p.get("pulse_bandwidth_mhz")
+        if bandwidth_mhz is not None and bandwidth_mhz > rate_mhz:
+            raise MatchRuleError("INVALID_PARAMETERS", "pulse bandwidth exceeds sample rate")
+
+
+def _edge_issue(task, edge, left, right, nodes):
+    """依次核对任务边格式、运行端口、块长度和有效输出采样率。"""
+    pair = (edge.source, edge.target)
+    if left is None or right is None:
+        return MatchIssue("BLOCKED_BY_NODE", "one or both endpoint nodes are unresolved", edge=pair)
+    source = nodes[edge.source]
+    target = nodes[edge.target]
+    error = validate_connection(task, edge, source, target, left.component,
+                                right.component, left.binding, right.binding)
+    if error:
+        return MatchIssue("INTERFACE_MISMATCH", error, edge=pair)
+    return None
+
+
+def _load_task(task):
+    """统一接收已解析任务、JSON 路径或原始任务字典。"""
+    if isinstance(task, (TaskRepresentation, SpecificationTask, RefinementResult)):
+        return task
+    if isinstance(task, (str, Path)):
+        return _load_task(json.loads(Path(task).read_text(encoding="utf-8")))
+    if isinstance(task, Mapping):
+        if task.get("schema_version") == "external_rf_task.v1":
+            task = parse_external_task(task)
+        if task.get("schema_version") == "rf_task_representation.v1":
+            return refine_business_task(task)
+        return represent_task(task)
+    raise TypeError("task must be a TaskRepresentation, JSON path or task mapping")
+
+
+def match_task(task, capability_map: CapabilityMap | None = None,
+               *, max_solutions: int = 1) -> StaticMatchResult:
+    """筛选可运行组件并校验 DAG 连接，返回绑定及未解决的问题。"""
+    if type(max_solutions) is not int or max_solutions < 1:
+        raise ValueError("max_solutions must be a positive integer")
+    task = _load_task(task)
+    refined_graph = None
+    if isinstance(task, RefinementResult):
+        if task.task is None:
+            return StaticMatchResult(task.task_id, "NEEDS_REFINEMENT", {}, (),
+                                     tuple(MatchIssue(issue.code, issue.detail, issue.node_id)
+                                           for issue in task.issues))
+        refined_graph = task.task.G.to_dict()
+        task = task.task
+    elif isinstance(task, SpecificationTask):
+        refined_graph = task.G.to_dict()
+    capability_map = capability_map or default_capability_map()
+    protocols = load_protocol_specs()
+    interfaces = load_component_specs(protocols=protocols)
+    nodes = {node.node_id: node for node in task.G.nodes}
+    options: dict[str, list[_Candidate]] = {}
+    node_issues = []
+    for node in task.G.nodes:
+        candidates = capability_map.candidates_for(node.capability)
+        feasible = []
+        failures = []
+        if not candidates:
+            detail = _KNOWN_UNSUPPORTED.get(node.capability,
+                                            f"no runnable capability mapping for {node.capability}")
+            failures.append(MatchIssue("UNSUPPORTED", detail, node.node_id))
+        for mapping in candidates:
+            try:
+                # 构造组件只用于验证参数和端口；静态匹配阶段不处理 DataPacket。
+                parameters = adapt_parameters(task, node, mapping.cid)
+                interface = interfaces.get(mapping.cid)
+                if interface is None:
+                    raise MatchRuleError("UNSUPPORTED", f"no OCS for {mapping.cid}")
+                required_error = interface.check_required(parameters)
+                if required_error:
+                    raise MatchRuleError("NEEDS_PARAMETERS", required_error)
+                for name, value in parameters.items():
+                    property_error = interface.check_property(name, value)
+                    if property_error:
+                        raise MatchRuleError("INVALID_PARAMETERS", property_error)
+                component = create_runtime_component(mapping.cid, **parameters)
+                candidate = _Candidate(ComponentBinding(mapping.cid, parameters), component)
+                port_error = check_node_ports(node, component, interface, protocols, parameters)
+                if port_error:
+                    raise MatchRuleError("INTERFACE_MISMATCH", port_error)
+                _signal_checks(task, node, candidate)
+                feasible.append(candidate)
+            except MatchRuleError as exc:
+                failures.append(MatchIssue(exc.code, str(exc), node.node_id, mapping.cid))
+            except (TypeError, ValueError) as exc:
+                failures.append(MatchIssue("INVALID_PARAMETERS", str(exc), node.node_id, mapping.cid))
+        options[node.node_id] = feasible
+        if not feasible:
+            node_issues.extend(failures)
+
+    # 节点组合形成过程中，一旦两端都已选定就检查边，及时剪掉不可连接的分支。
+    active = [node.node_id for node in task.G.nodes if options[node.node_id]]
+    best = None
+    best_issues = None
+    solutions = []
+    candidates_exhaustive = True
+
+    def valid_trials(index, trial):
+        if index == len(active):
+            if len(trial) == len(nodes):
+                yield dict(trial)
+            return
+        node_id = active[index]
+        for candidate in options[node_id]:
+            trial[node_id] = candidate
+            if all(_edge_issue(task, edge, trial[edge.source], trial[edge.target], nodes) is None
+                   for edge in task.G.edges
+                   if edge.source in trial and edge.target in trial):
+                yield from valid_trials(index + 1, trial)
+            del trial[node_id]
+
+    if not node_issues:
+        for trial in valid_trials(0, {}):
+            if len(solutions) == max_solutions:
+                candidates_exhaustive = False
+                break
+            solutions.append({node_id: candidate.binding for node_id, candidate in trial.items()})
+            if best is None:
+                best, best_issues = trial, []
+            if max_solutions == 1:
+                break
+    if best is None:
+        for combination in itertools.product(*(options[node_id] for node_id in active)):
+            trial = dict(zip(active, combination))
+            edge_issues = [_edge_issue(task, edge, trial.get(edge.source), trial.get(edge.target), nodes)
+                           for edge in task.G.edges]
+            edge_issues = [issue for issue in edge_issues if issue is not None]
+            if best is None or len(edge_issues) < len(best_issues):
+                best, best_issues = trial, edge_issues
+        if best_issues is None:
+            best_issues = [_edge_issue(task, edge, None, None, nodes) for edge in task.G.edges]
+    chosen = best or {}
+    output_issues = []
+    if isinstance(task, SpecificationTask):
+        output_issues = [MatchIssue("OUTPUT_NOT_COVERED", f"refinement profile does not produce {name}")
+                         for name in task.G.uncovered_outputs]
+    issues = tuple(node_issues + best_issues + output_issues)
+    bindings = {node_id: candidate.binding for node_id, candidate in chosen.items()}
+    # 部分匹配时也只公开已验证可连接的边，失败原因放入 unresolved。
+    edges = tuple((edge.source, edge.target) for edge in task.G.edges
+                  if _edge_issue(task, edge, chosen.get(edge.source), chosen.get(edge.target), nodes) is None)
+    any_candidate = any(capability_map.candidates_for(node.capability) for node in task.G.nodes)
+    # 有候选但仍有节点或边问题时标记 PARTIAL；完全无候选时标记 UNSUPPORTED。
+    status = ("MATCHED" if not issues and len(bindings) == len(nodes) else
+              "PARTIAL" if any_candidate else "UNSUPPORTED")
+    execution_graph = None
+    candidate_graphs = ()
+    if status == "MATCHED" and isinstance(task, SpecificationTask):
+        try:
+            candidate_graphs = tuple(_build_execution_graph(task, option)
+                                     for option in (solutions or [bindings]))
+            execution_graph = candidate_graphs[0]
+        except ValueError as exc:
+            issues += (MatchIssue("INCOMPLETE_DAG", str(exc)),)
+            status = "PARTIAL"
+    return StaticMatchResult(task.task_id, status, bindings, edges, issues, refined_graph,
+                             tuple(solutions) if max_solutions > 1 and status == "MATCHED" else (),
+                             candidates_exhaustive, execution_graph, candidate_graphs)

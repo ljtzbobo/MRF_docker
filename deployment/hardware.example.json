@@ -1,0 +1,12 @@
+{
+  "schema_version": 1,
+  "hardware_id": "local-docker-example",
+  "capacity": {
+    "cpu_millicores": 4000,
+    "memory_bytes": 8589934592,
+    "bandwidth_bytes_per_s": 1000000000,
+    "dsp_units": 0,
+    "fpga_units": 0
+  },
+  "features": []
+}

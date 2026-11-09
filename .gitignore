@@ -18,3 +18,10 @@ _paper_hybrid_redundancy.txt
 
 .DS_Store
 Thumbs.db
+
+node_modules/
+dist/
+.env
+.env.*
+!.env.example
+!.env.sample

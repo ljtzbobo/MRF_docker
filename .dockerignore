@@ -1,0 +1,13 @@
+.git
+.idea
+.agents
+.codex
+**/__pycache__/
+**/*.pyc
+tests/
+examples/
+outputs/
+draft/
+docs/
+backend/
+*.md

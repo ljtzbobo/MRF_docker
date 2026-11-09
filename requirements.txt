@@ -1,3 +1,6 @@
-matplotlib
-numpy
-torch
+numpy>=1.23,<3
+matplotlib>=3.6,<4
+fastapi>=0.115,<1
+uvicorn>=0.30,<1
+httpx>=0.27,<1
+jsonschema>=4.20,<5

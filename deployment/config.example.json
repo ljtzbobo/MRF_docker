@@ -1,0 +1,19 @@
+{
+  "schema_version": 1,
+  "processing_node_id": "local-docker",
+  "hardware_profile": "hardware.example.json",
+  "measurements": "../resources/data/measurements.json",
+  "transfers": [
+    {"source": "rx-02:ofdm_rx", "target": "rx-02:qpsk_demod", "bytes_per_call": 3424, "reserved_bytes_per_s": 1000000},
+    {"source": "rx-02:qpsk_demod", "target": "rx-02:fec_decode", "bytes_per_call": 3424, "reserved_bytes_per_s": 1000000},
+    {"source": "rx-02:fec_decode", "target": "rx-02:frame_verify", "bytes_per_call": 208, "reserved_bytes_per_s": 1000000},
+    {"source": "rx-02:frame_verify", "target": "rx-02:reassemble", "bytes_per_call": 16, "reserved_bytes_per_s": 1000000}
+  ],
+  "images": {
+    "C15": "mrf-component:local",
+    "C14": "mrf-component:local",
+    "C17": "mrf-component:local",
+    "C35": "mrf-component:local",
+    "C36": "mrf-component:local"
+  }
+}
