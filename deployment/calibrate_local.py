@@ -1,14 +1,19 @@
-"""实测本机 Docker 数据链接收链并生成专用部署画像。"""
+"""实测本机 Docker 组件 DAG，保存逐节点和整帧观测及部署画像。"""
 
 from dataclasses import asdict
+from collections.abc import Mapping
+from datetime import datetime, timezone
 import argparse
 import json
 import math
+import hashlib
 from pathlib import Path
 import subprocess
 import time
 
-from deployment.docker_runtime import DockerRuntime
+from deployment.docker_runtime import DockerCleanupError, DockerRuntime
+from deployment.protocol import decode_packet, encode_packet
+from task_executor import DAGExecutor
 from examples.business_refinement_demo import configured_data_link_receive
 from examples.data_link_receive_execution_demo import aligned_iq_frame
 from matching import match_task
@@ -44,26 +49,47 @@ def write_json(path, value):
     path.write_text(json.dumps(value, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
 
 
-def calibrate(output_dir: Path, frames_count: int):
-    if frames_count < 20:
+def calibrate(output_dir: Path, frames_count: int, *, execution_graph=None, frames=None, image=IMAGE):
+    if type(frames_count) is not int or frames_count < 20:
         raise ValueError("至少需要 20 帧来观察 p95 处理时间")
     info = json.loads(docker("info", "--format", "{{json .}}"))
     if not info.get("ID") or not info.get("NCPU") or not info.get("MemTotal"):
         raise RuntimeError("无法读取 Docker Engine 的硬件容量")
-    image_id = docker("image", "inspect", IMAGE, "--format", "{{.Id}}")
-    match = match_task(configured_data_link_receive())
-    if match.status != "MATCHED" or not match.execution_graph:
-        raise RuntimeError("数据链接收任务未完整静态匹配")
-    graph = match.execution_graph
+    image_id = docker("image", "inspect", image, "--format", "{{.Id}}")
+    demo = execution_graph is None
+    if demo:
+        match = match_task(configured_data_link_receive())
+        if match.status != "MATCHED" or not match.execution_graph:
+            raise RuntimeError("数据链接收任务未完整静态匹配")
+        execution_graph = match.execution_graph
+    executor = DAGExecutor.from_execution_graph(execution_graph)
+    graph = execution_graph
+    message = bytes(index % 256 for index in range(frames_count * 16))
+    if frames is None:
+        if not demo:
+            raise ValueError("custom execution graphs require explicit input frames")
+        frames = [{SOURCE: aligned_iq_frame(message[index * 16:(index + 1) * 16],
+                                            1001, index, frames_count)}
+                  for index in range(frames_count)]
+    else:
+        frames = list(frames)
+    if len(frames) != frames_count:
+        raise ValueError("calibration frame count differs from supplied frames")
+    input_digest = hashlib.sha256()
+    for frame in frames:
+        encoded = {node: encode_packet(value) if not isinstance(value, Mapping) else
+                   {port: encode_packet(packet) for port, packet in value.items()}
+                   for node, value in frame.items()}
+        input_digest.update(json.dumps(encoded, sort_keys=True).encode("utf-8"))
+        input_digest.update(b"\n")
     nodes = {node["id"]: node for node in graph["nodes"]}
-    runtime = DockerRuntime("local-docker", {node["cid"]: IMAGE for node in nodes.values()})
+    runtime = DockerRuntime("local-docker", {node["cid"]: image for node in nodes.values()})
     handles = {}
     start_ms = {}
     measurements = {node_id: {"runtime_ms": [], "input_bytes": [], "output_bytes": []}
                     for node_id in nodes}
-    message = bytes(index % 256 for index in range(frames_count * 16))
     cpu_before = {}
-    wall_before = time.perf_counter()
+    session_started = time.perf_counter()
     try:
         for node_id in graph["topological_order"]:
             node = nodes[node_id]
@@ -78,32 +104,38 @@ def calibrate(output_dir: Path, frames_count: int):
                       for node_id, handle in handles.items()}
         wall_before = time.perf_counter()
         outputs = []
-        for index in range(frames_count):
-            produced = {}
-            for node_id in graph["topological_order"]:
-                node = nodes[node_id]
-                packet = (aligned_iq_frame(message[index * 16:(index + 1) * 16],
-                                           1001, index, frames_count)
-                          if node_id == SOURCE else produced[next(edge["source"] for edge in graph["edges"]
-                                                                if edge["target"] == node_id)])
-                port = next(iter(node["inputs"]))
-                started = time.perf_counter()
-                output = runtime.process(handles[node_id], {port: packet})
-                measurements[node_id]["runtime_ms"].append((time.perf_counter() - started) * 1000)
-                measurements[node_id]["input_bytes"].append(packet.nbytes)
-                measurements[node_id]["output_bytes"].append(output.nbytes)
-                produced[node_id] = output
-            outputs.append(produced[SINK])
+        frame_ms = []
+
+        def measured_invoke(node_id, packets):
+            started = time.perf_counter()
+            output = runtime.process(handles[node_id], packets)
+            measurements[node_id]["runtime_ms"].append((time.perf_counter() - started) * 1000)
+            measurements[node_id]["input_bytes"].append(sum(packet.nbytes for packet in packets.values()))
+            measurements[node_id]["output_bytes"].append(output.nbytes)
+            return output
+
+        for frame in frames:
+            started = time.perf_counter()
+            result = executor._execute_frame(frame, measured_invoke)
+            frame_ms.append((time.perf_counter() - started) * 1000)
+            outputs.append(result.sink_outputs)
         elapsed_s = time.perf_counter() - wall_before
+        observed_session_ms = (time.perf_counter() - session_started) * 1000
         cpu_after = {node_id: cgroup_value(handle.container_id, "cpu.stat", "usage_usec")
                      for node_id, handle in handles.items()}
         memory_peak = {node_id: cgroup_value(handle.container_id, "memory.peak")
                        for node_id, handle in handles.items()}
-        if outputs[-1].samples.tobytes() != message:
+        if demo and outputs[-1][SINK].samples.tobytes() != message:
             raise RuntimeError("标定输入未正确完成数据链重组")
     finally:
+        cleanup_errors = []
         for handle in reversed(list(handles.values())):
-            runtime.stop(handle)
+            try:
+                runtime.stop(handle)
+            except Exception as exc:
+                cleanup_errors.append(str(exc))
+        if cleanup_errors:
+            raise DockerCleanupError("calibration container cleanup failed: " + "; ".join(cleanup_errors))
 
     hardware_id = "docker-" + info["ID"].replace(":", "-")
     profiles = []
@@ -128,6 +160,7 @@ def calibrate(output_dir: Path, frames_count: int):
             "input_bytes": max(measured["input_bytes"]),
             "output_bytes": max(measured["output_bytes"]),
             "sample_count": frames_count,
+            "timing_scope": "docker_http_roundtrip", "setup_sample_count": 1,
             "source": "local Docker calibration; 1 CPU/256 MiB limit; startup n=1; CPU reservation=1 core; memory=1.5x peak, min 64 MiB; same-host network=0",
         })
         raw_nodes[node_id] = {
@@ -151,12 +184,22 @@ def calibrate(output_dir: Path, frames_count: int):
     write_json(output_dir / "config.local.json", {
         "schema_version": 1, "processing_node_id": "local-docker",
         "hardware_profile": "hardware.local.json", "measurements": "measurements.local.json",
-        "transfers": transfers, "images": {node["cid"]: IMAGE for node in nodes.values()}})
+        "transfers": transfers, "images": {node["cid"]: image for node in nodes.values()}})
     write_json(output_dir / "calibration.local.json", {
         "docker_engine_id": info["ID"], "docker_server_version": info["ServerVersion"],
         "image_id": image_id, "frame_count": frames_count,
+        "measured_at_utc": datetime.now(timezone.utc).isoformat(),
+        "input_sha256": input_digest.hexdigest(),
+        "execution_graph": graph,
+        "frame_ms": frame_ms, "observed_frame_p95_ms": p95(frame_ms),
+        "observed_session_ms": observed_session_ms,
+        "estimated_session_ms": sum(start_ms.values()) + frames_count * sum(
+            p95(item["runtime_ms"]) for item in measurements.values()),
+        "timing_scope": "serial Docker HTTP roundtrip; validation included; session includes pre-processing cgroup instrumentation, excludes cleanup",
+        "session_sample_count": 1,
         "elapsed_processing_s": elapsed_s, "nodes": raw_nodes,
-        "notes": ["业务输入是演示用对齐 IQ 帧，不代表真实射频链路。",
+        "notes": ["业务输入是演示用对齐 IQ 帧，不代表真实射频链路。" if demo else
+                  "输入为调用方提供的数据包；该画像仅适用于本次图、参数、镜像及输入负载。",
                   "启动时间每组件只测一次，字段名沿用 setup_p95_ms，不具有 p95 统计置信度。",
                   "CPU 预留为标定时的 1 核限额；内存预留为观测峰值的 1.5 倍且至少 64 MiB。",
                   "所有组件同机使用回环 HTTP；外部链路带宽未经测量，容量和需求均设为 0。"]})
@@ -164,11 +207,21 @@ def calibrate(output_dir: Path, frames_count: int):
 
 
 def main():
-    parser = argparse.ArgumentParser(description="标定本机数据链接收容器")
+    parser = argparse.ArgumentParser(description="标定本机 Docker 组件 DAG；默认使用数据链接收链")
     parser.add_argument("--output-dir", type=Path, default=Path(__file__).resolve().parent)
     parser.add_argument("--frames", type=int, default=32)
+    parser.add_argument("--execution-graph", type=Path)
+    parser.add_argument("--frames-json", type=Path, help="array of source mappings using deployment packet encoding")
+    parser.add_argument("--image", default=IMAGE)
     args = parser.parse_args()
-    print(calibrate(args.output_dir, args.frames))
+    graph = json.loads(args.execution_graph.read_text(encoding="utf-8")) if args.execution_graph else None
+    frames = None
+    if args.frames_json:
+        raw_frames = json.loads(args.frames_json.read_text(encoding="utf-8"))
+        frames = [{node: decode_packet(value) if "data_base64" in value else
+                   {port: decode_packet(packet) for port, packet in value.items()}
+                   for node, value in frame.items()} for frame in raw_frames]
+    print(calibrate(args.output_dir, args.frames, execution_graph=graph, frames=frames, image=args.image))
 
 
 if __name__ == "__main__":

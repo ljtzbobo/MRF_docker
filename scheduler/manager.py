@@ -116,19 +116,23 @@ class TaskScheduler:
     @synchronized
     def preview_placement(self, task, match: StaticMatchResult,
                           fixed_nodes: dict[str, str] | None = None,
-                          *, max_assignments: int = 100000) -> PlacementPlan:
+                          *, algorithm="exact", frame_count=1,
+                          max_assignments: int = 100000) -> PlacementPlan:
         if task.task_id in self.active or task.task_id in self.placement_active:
             raise SchedulingError(f"task {task.task_id} is already active")
         if self.placement_planner is None:
             raise SchedulingError("placement planner is not configured")
         return self.placement_planner.plan(task, match, self._placement_state(),
-                                           fixed_nodes, max_assignments=max_assignments)
+                                           fixed_nodes, algorithm=algorithm, frame_count=frame_count,
+                                           max_assignments=max_assignments)
 
     @synchronized
     def submit_placement(self, task, match: StaticMatchResult,
                          fixed_nodes: dict[str, str] | None = None,
-                         *, max_assignments: int = 100000) -> PlacementPlan:
+                         *, algorithm="exact", frame_count=1,
+                         max_assignments: int = 100000) -> PlacementPlan:
         plan = self.preview_placement(task, match, fixed_nodes,
+                                      algorithm=algorithm, frame_count=frame_count,
                                       max_assignments=max_assignments)
         if plan.status != "FEASIBLE_ESTIMATE":
             raise SchedulingError("; ".join(plan.issues) or plan.status)

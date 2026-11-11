@@ -7,7 +7,7 @@ from matching.matcher import StaticMatchResult
 from task_repr.models.task import TaskRepresentation
 from task_repr.template.refinement import SpecificationTask
 
-from .measurements import (ComponentMeasurement, MeasurementCatalog,
+from .measurements import (MeasurementCatalog,
                            PhysicalHardwareProfile, PhysicalUsage)
 from .planner import _time_limit
 
@@ -84,6 +84,10 @@ class PlacementPlan:
     issues: tuple[str, ...]
     explored: int = 0
     exhaustive: bool = True
+    algorithm: str = "exact"
+    optimality_proven: bool = False
+    frame_count: int = 1
+    estimation_basis: str = "serial_setup_plus_frames_times_process_and_transfer; sum_of_profile_statistics_not_task_p95"
 
     def to_dict(self) -> dict:
         return {"task_id": self.task_id, "status": self.status,
@@ -93,7 +97,9 @@ class PlacementPlan:
                 "edge_transfer_ms": {f"{a}->{b}": value for (a, b), value in self.edge_transfer_ms.items()},
                 "estimated_completion_ms": self.estimated_completion_ms,
                 "time_limit_ms": self.time_limit_ms, "issues": list(self.issues),
-                "explored": self.explored, "exhaustive": self.exhaustive}
+                "explored": self.explored, "exhaustive": self.exhaustive,
+                "algorithm": self.algorithm, "optimality_proven": self.optimality_proven,
+                "frame_count": self.frame_count, "estimation_basis": self.estimation_basis}
 
 
 def _add(left: PhysicalUsage, right: PhysicalUsage) -> PhysicalUsage:
@@ -106,6 +112,8 @@ def _fits(demand: PhysicalUsage, available: PhysicalUsage) -> bool:
 
 def _order(task) -> tuple[str, ...]:
     ids = {node.node_id for node in task.G.nodes}
+    if not ids or len(ids) != len(task.G.nodes):
+        raise ValueError("DAG must have unique nonempty nodes")
     incoming = {key: 0 for key in ids}
     outgoing = {key: [] for key in ids}
     seen = set()
@@ -131,12 +139,83 @@ def _order(task) -> tuple[str, ...]:
     return tuple(order)
 
 
+@dataclass
+class PlacementProblem:
+    task: object
+    match: StaticMatchResult
+    state: PlacementState
+    order: tuple[str, ...]
+    options: dict
+    nodes: dict
+    links: dict
+    transfers: dict
+    edges: tuple
+    frame_count: int
+
+    def evaluate(self, assignment, *, complete=False):
+        """Validate partial or complete assignments using the same reservation rules."""
+        if complete and set(assignment) != set(self.order):
+            raise ValueError("assignment does not cover the whole DAG")
+        demands = {key: PhysicalUsage() for key in self.nodes}
+        link_demand = {key: 0.0 for key in self.links}
+        edge_ms = {}
+        setup = process = 0.0
+        for node_id, option in assignment.items():
+            if node_id not in self.options or option not in self.options[node_id]:
+                raise ValueError(f"{node_id}: incompatible placement candidate")
+            host, measurement = option
+            demands[host] = _add(demands[host], measurement.demand)
+            if not _fits(_add(demands[host], self.state.node_used[host]),
+                         self.nodes[host].hardware.capacity):
+                raise ValueError(f"{host}: node capacity exceeded by {node_id}")
+            setup += measurement.setup_p95_ms
+            process += measurement.runtime_p95_ms
+        for source, target in self.edges:
+            if source not in assignment or target not in assignment:
+                continue
+            left, source_measurement = assignment[source]
+            right, target_measurement = assignment[target]
+            transfer = self.transfers[(source, target)]
+            if (transfer.bytes_per_call > source_measurement.output_bytes or
+                    transfer.bytes_per_call > target_measurement.input_bytes):
+                raise ValueError(f"{source}->{target}: transfer bytes exceed measured output or input")
+            duration = 0.0
+            if left != right:
+                pair = (left, right)
+                if pair not in self.links:
+                    raise ValueError(f"{source}->{target}: no link {left}->{right}")
+                link_demand[pair] += transfer.reserved_bytes_per_s
+                link = self.links[pair]
+                if link_demand[pair] + self.state.link_used[pair] > link.capacity_bytes_per_s:
+                    raise ValueError(f"{left}->{right}: link capacity exceeded")
+                duration = (link.latency_ms + transfer.bytes_per_call * 1000 /
+                            transfer.reserved_bytes_per_s)
+            edge_ms[(source, target)] = duration
+        cost = setup + self.frame_count * (process + sum(edge_ms.values()))
+        return cost, demands, link_demand, edge_ms
+
+    def node_cost(self, option):
+        measurement = option[1]
+        return measurement.setup_p95_ms + self.frame_count * measurement.runtime_p95_ms
+
+    def average_transfer(self, source, target):
+        transfer = self.transfers[(source, target)]
+        costs = []
+        for left, _ in self.options[source]:
+            for right, _ in self.options[target]:
+                if left == right:
+                    costs.append(0.0)
+                elif (left, right) in self.links:
+                    costs.append(self.frame_count * (self.links[(left, right)].latency_ms +
+                                 transfer.bytes_per_call * 1000 / transfer.reserved_bytes_per_s))
+        return sum(costs) / len(costs) if costs else 0.0
+
+
 class PlacementPlanner:
-    """比较固定 CID 绑定的实现与处理节点，不修改静态匹配结果。"""
+    """Optimize fixed CID bindings; all strategies share physical feasibility and serial cost."""
 
     def __init__(self, nodes: tuple[ProcessingNode, ...], links: tuple[NetworkLink, ...],
-                 measurements: MeasurementCatalog,
-                 transfers: tuple[EdgeTransfer, ...]):
+                 measurements: MeasurementCatalog, transfers: tuple[EdgeTransfer, ...]):
         self.nodes = {item.node_id: item for item in nodes}
         self.links = {(item.source, item.target): item for item in links}
         self.measurements = measurements
@@ -149,195 +228,121 @@ class PlacementPlanner:
 
     def plan(self, task: TaskRepresentation | SpecificationTask, match: StaticMatchResult,
              state: PlacementState, fixed_nodes: dict[str, str] | None = None,
-             *, max_assignments: int = 100000) -> PlacementPlan:
-        if type(max_assignments) is not int or max_assignments < 1:
-            raise ValueError("max_assignments must be positive")
-        if not match.candidate_bindings:
-            return self._plan_single(task, match, state, fixed_nodes,
-                                     max_assignments=max_assignments)
+             *, algorithm="exact", frame_count=1, max_assignments=100000) -> PlacementPlan:
+        if algorithm not in ("exact", "chain_dp", "heft"):
+            raise ValueError("unknown algorithm")
+        for name, value in (("max_assignments", max_assignments), ("frame_count", frame_count)):
+            if type(value) is not int or value < 1:
+                raise ValueError(f"{name} must be positive")
+        candidates = match.candidate_bindings or (match.bindings,)
         plans = []
         remaining = max_assignments
-        for bindings in match.candidate_bindings:
+        for bindings in candidates:
             if remaining <= 0:
                 break
-            candidate = self._plan_single(task, replace(match, bindings=bindings,
-                                                        candidate_bindings=()), state,
-                                          fixed_nodes, max_assignments=remaining)
+            problem = self._prepare_problem(task, replace(match, bindings=bindings), state,
+                                            fixed_nodes, frame_count)
+            if isinstance(problem, PlacementPlan):
+                candidate = replace(problem, algorithm=algorithm)
+            else:
+                from .optimizers import search_exact, search_chain_dp, search_heft
+                search = {"exact": search_exact, "chain_dp": search_chain_dp, "heft": search_heft}[algorithm]
+                outcome = search(problem, remaining)
+                candidate = self._finalize_plan(problem, outcome, algorithm)
             plans.append(candidate)
             remaining -= candidate.explored
-            if not candidate.exhaustive:
+            if candidate.status == "SEARCH_LIMIT":
                 break
-        priority = {"FEASIBLE_ESTIMATE": 0, "UNVERIFIED_TIME": 1,
-                    "SEARCH_LIMIT": 2, "INFEASIBLE": 3,
-                    "NEEDS_CALIBRATION": 4, "NEEDS_TRANSFER_PROFILE": 5}
-        chosen = min(plans, key=lambda plan: (priority[plan.status],
-                                              plan.estimated_completion_ms or math.inf))
-        exhaustive = (match.candidates_exhaustive and
-                      len(plans) == len(match.candidate_bindings) and
-                      all(plan.exhaustive for plan in plans))
-        if not exhaustive and chosen.status != "SEARCH_LIMIT":
-            return replace(chosen, status="SEARCH_LIMIT", exhaustive=False,
-                           explored=sum(plan.explored for plan in plans),
+        priority = {"FEASIBLE_ESTIMATE": 0, "UNVERIFIED_TIME": 1, "SEARCH_LIMIT": 2,
+                    "HEURISTIC_FAILED": 3, "INFEASIBLE": 4, "NEEDS_CALIBRATION": 5,
+                    "NEEDS_TRANSFER_PROFILE": 6, "UNSUPPORTED_GRAPH": 7}
+        chosen = min(plans, key=lambda p: (priority[p.status],
+                     p.estimated_completion_ms if p.estimated_completion_ms is not None else math.inf))
+        truncated = (not match.candidates_exhaustive or len(plans) != len(candidates) or
+                     any(p.status == "SEARCH_LIMIT" for p in plans))
+        calibrated = all(p.status not in ("NEEDS_CALIBRATION", "NEEDS_TRANSFER_PROFILE") for p in plans)
+        proven = (not truncated and calibrated and all(p.exhaustive for p in plans) and
+                  chosen.optimality_proven)
+        if truncated:
+            return replace(chosen, status="SEARCH_LIMIT", exhaustive=False, optimality_proven=False,
+                           explored=sum(p.explored for p in plans),
                            issues=chosen.issues + ("component or placement search limit reached",))
-        return replace(chosen, explored=sum(plan.explored for plan in plans),
-                       exhaustive=exhaustive)
+        return replace(chosen, explored=sum(p.explored for p in plans),
+                       exhaustive=all(p.exhaustive for p in plans), optimality_proven=proven)
 
-    def _plan_single(self, task: TaskRepresentation | SpecificationTask, match: StaticMatchResult,
-             state: PlacementState, fixed_nodes: dict[str, str] | None = None,
-             *, max_assignments: int = 100000) -> PlacementPlan:
-        if type(max_assignments) is not int or max_assignments < 1:
-            raise ValueError("max_assignments must be positive")
+    def _prepare_problem(self, task, match, state, fixed_nodes, frame_count):
         order = _order(task)
-        node_ids = set(order)
-        graph_edges = {(edge.source, edge.target) for edge in task.G.edges}
-        if (match.task_id != task.task_id or match.status != "MATCHED" or
-                set(match.bindings) != node_ids or set(match.edges) != graph_edges):
+        ids = set(order)
+        edges = tuple((edge.source, edge.target) for edge in task.G.edges)
+        if (match.task_id != task.task_id or match.status != "MATCHED" or match.unresolved or
+                set(match.bindings) != ids or set(match.edges) != set(edges)):
             raise ValueError("placement requires the complete matched DAG")
-        if fixed_nodes is not None and set(fixed_nodes) != node_ids:
+        if fixed_nodes is not None and set(fixed_nodes) != ids:
             raise ValueError("fixed_nodes must assign every DAG node")
         if fixed_nodes is not None and set(fixed_nodes.values()) - set(self.nodes):
             raise ValueError("fixed_nodes references an unknown processing node")
-        if (set(state.node_used) != set(self.nodes) or
-                set(state.link_used) != set(self.links)):
+        if set(state.node_used) != set(self.nodes) or set(state.link_used) != set(self.links):
             raise ValueError("placement state must cover every processing node and link")
-        for node_id, used in state.node_used.items():
-            if any(not math.isfinite(value) or value < 0 for value in asdict(used).values()):
-                raise ValueError(f"invalid resource state for {node_id}")
+        for key, used in state.node_used.items():
+            if any(type(v) not in (int, float) or not math.isfinite(v) or v < 0
+                   for v in asdict(used).values()):
+                raise ValueError(f"invalid resource state for {key}")
+            if not _fits(used, self.nodes[key].hardware.capacity):
+                raise ValueError(f"resource state exceeds capacity for {key}")
         for pair, used in state.link_used.items():
-            if not math.isfinite(used) or used < 0:
+            if (type(used) not in (int, float) or not math.isfinite(used) or used < 0 or
+                    used > self.links[pair].capacity_bytes_per_s):
                 raise ValueError(f"invalid link state for {pair}")
-
-        limit = _time_limit(task)
-        def result(status, issues, *, allocations=(), demand=None, links=None, transfers=None,
-                   duration=None, explored=0, exhaustive=True):
-            return PlacementPlan(task.task_id, status, tuple(allocations), demand or {}, links or {},
-                                 transfers or {}, duration, limit, tuple(issues), explored, exhaustive)
-
-        missing_transfers = sorted(graph_edges - set(self.transfers))
-        if missing_transfers:
-            return result("NEEDS_TRANSFER_PROFILE", [f"missing edge transfer profile: {a}->{b}"
-                                                     for a, b in missing_transfers])
-        options = {}
-        missing = []
-        for node_id in order:
-            binding = match.bindings[node_id]
-            allowed = (fixed_nodes[node_id],) if fixed_nodes is not None else tuple(self.nodes)
-            candidates = [(host_id, item)
-                          for host_id in allowed if host_id in self.nodes
-                          for item in self.measurements.candidates(
-                              binding.cid, binding.parameters, self.nodes[host_id].hardware)]
-            if not candidates:
-                missing.append(f"{node_id}: no compatible measurement or processing node for {binding.cid}")
-            options[node_id] = candidates
+        def diagnostic(status, issues):
+            return PlacementPlan(task.task_id, status, (), {}, {}, {}, None, _time_limit(task),
+                                 tuple(issues), frame_count=frame_count)
+        missing = sorted(set(edges) - set(self.transfers))
         if missing:
-            return result("NEEDS_CALIBRATION", missing)
+            return diagnostic("NEEDS_TRANSFER_PROFILE", [f"missing edge transfer profile: {a}->{b}"
+                                                        for a, b in missing])
+        options = {}
+        for key in order:
+            binding = match.bindings[key]
+            allowed = (fixed_nodes[key],) if fixed_nodes is not None else tuple(self.nodes)
+            options[key] = tuple((host, item) for host in allowed
+                                 for item in self.measurements.candidates(
+                                     binding.cid, binding.parameters, self.nodes[host].hardware))
+        missing = [f"{key}: no compatible measurement or processing node for {match.bindings[key].cid}"
+                   for key in order if not options[key]]
+        if missing:
+            return diagnostic("NEEDS_CALIBRATION", missing)
+        return PlacementProblem(task, match, state, order, options, self.nodes, self.links,
+                                self.transfers, edges, frame_count)
 
-        available = {key: PhysicalUsage(**{
-            field: getattr(node.hardware.capacity, field) - getattr(state.node_used[key], field)
-            for field in _FIELDS}) for key, node in self.nodes.items()}
-        adjacency = {node_id: [] for node_id in order}
-        for edge in task.G.edges:
-            adjacency[edge.target].append(edge.source)
-        selected = {}
-        demands = {key: PhysicalUsage() for key in self.nodes}
-        link_demands = {key: 0.0 for key in self.links}
-        best = None
-        explored = 0
-        exhaustive = True
-        reasons = set()
-
-        def search(index):
-            nonlocal best, explored, exhaustive
-            if index == len(order):
-                finish = {}
-                edge_ms = {}
-                for node_id in order:
-                    host_id, measurement = selected[node_id]
-                    start = 0.0
-                    for predecessor in adjacency[node_id]:
-                        source_host, _ = selected[predecessor]
-                        transfer_ms = 0.0
-                        if source_host != host_id:
-                            transfer = self.transfers[(predecessor, node_id)]
-                            link = self.links[(source_host, host_id)]
-                            transfer_ms = link.latency_ms + transfer.bytes_per_call * 1000 / transfer.reserved_bytes_per_s
-                        edge_ms[(predecessor, node_id)] = transfer_ms
-                        start = max(start, finish[predecessor] + transfer_ms)
-                    finish[node_id] = start + measurement.setup_p95_ms + measurement.runtime_p95_ms
-                duration = max(finish.values(), default=0)
-                if best is None or duration < best[0]:
-                    best = (duration, dict(selected), dict(demands), dict(link_demands), edge_ms)
-                return
-            node_id = order[index]
-            for host_id, measurement in options[node_id]:
-                if explored >= max_assignments:
-                    exhaustive = False
-                    return
-                explored += 1
-                next_demand = _add(demands[host_id], measurement.demand)
-                if not _fits(next_demand, available[host_id]):
-                    reasons.add(f"{host_id}: node capacity exceeded by {node_id}")
-                    continue
-                added_links = []
-                failure = None
-                for predecessor in adjacency[node_id]:
-                    source_host, source_measurement = selected[predecessor]
-                    transfer = self.transfers[(predecessor, node_id)]
-                    if (transfer.bytes_per_call > source_measurement.output_bytes or
-                            transfer.bytes_per_call > measurement.input_bytes):
-                        failure = f"{predecessor}->{node_id}: transfer bytes exceed measured output or input"
-                        break
-                    if source_host == host_id:
-                        continue
-                    pair = (source_host, host_id)
-                    if pair not in self.links:
-                        failure = f"{predecessor}->{node_id}: no link {source_host}->{host_id}"
-                        break
-                    requested = link_demands[pair] + transfer.reserved_bytes_per_s
-                    if requested + state.link_used[pair] > self.links[pair].capacity_bytes_per_s:
-                        failure = f"{pair[0]}->{pair[1]}: link capacity exceeded"
-                        break
-                    link_demands[pair] = requested
-                    added_links.append((pair, transfer.reserved_bytes_per_s))
-                if failure:
-                    reasons.add(failure)
-                    for pair, rate in added_links:
-                        link_demands[pair] -= rate
-                    continue
-                previous = demands[host_id]
-                demands[host_id] = next_demand
-                selected[node_id] = (host_id, measurement)
-                search(index + 1)
-                del selected[node_id]
-                demands[host_id] = previous
-                for pair, rate in added_links:
-                    link_demands[pair] -= rate
-                if not exhaustive:
-                    break
-
-        search(0)
-        if best is None:
-            return result("SEARCH_LIMIT" if not exhaustive else "INFEASIBLE",
-                          sorted(reasons) or ["no feasible assignment"],
-                          explored=explored, exhaustive=exhaustive)
-        duration, placement, node_demand, link_demand, edge_ms = best
-        allocations = tuple(PlacementAllocation(
-            node_id, match.bindings[node_id].cid, measurement.implementation_id,
-            f"{task.task_id}:{node_id}", host_id, measurement.processor,
-            measurement.demand, measurement.runtime_p95_ms, measurement.setup_p95_ms)
-            for node_id, (host_id, measurement) in ((key, placement[key]) for key in order))
-        issues = []
-        if limit is None:
-            issues.append("task has no explicit completion deadline")
-        elif limit <= 0:
-            issues.append("task completion deadline has expired")
-        elif duration > limit:
-            issues.append("DAG completion time exceeds task time limit")
-        if not exhaustive:
+    def _finalize_plan(self, problem, outcome, algorithm):
+        limit = _time_limit(problem.task)
+        issues = list(outcome.issues)
+        allocations = ()
+        demands, links, transfers = {}, {}, {}
+        duration = None
+        status = "UNSUPPORTED_GRAPH" if outcome.unsupported else (
+            "SEARCH_LIMIT" if outcome.limited else
+            "INFEASIBLE" if outcome.exhaustive else "HEURISTIC_FAILED")
+        if outcome.assignment is not None:
+            # Recheck the complete graph independently of strategy and pruning decisions.
+            duration, demands, links, transfers = problem.evaluate(outcome.assignment, complete=True)
+            allocations = tuple(PlacementAllocation(
+                key, problem.match.bindings[key].cid, outcome.assignment[key][1].implementation_id,
+                f"{problem.task.task_id}:{key}", outcome.assignment[key][0],
+                outcome.assignment[key][1].processor, outcome.assignment[key][1].demand,
+                outcome.assignment[key][1].runtime_p95_ms, outcome.assignment[key][1].setup_p95_ms)
+                for key in problem.order)
+            status = "UNVERIFIED_TIME" if limit is None else "FEASIBLE_ESTIMATE"
+            if limit is None:
+                issues.append("task has no explicit completion deadline")
+            elif duration > limit or limit <= 0:
+                issues.append("DAG completion time exceeds task time limit")
+                status = "INFEASIBLE" if outcome.exhaustive else "HEURISTIC_FAILED"
+            if outcome.limited:
+                status = "SEARCH_LIMIT"
+        if outcome.limited:
             issues.append("assignment search limit reached; optimum is unverified")
-        status = ("INFEASIBLE" if limit is not None and (limit <= 0 or duration > limit) and exhaustive
-                  else "SEARCH_LIMIT" if not exhaustive
-                  else "UNVERIFIED_TIME" if limit is None else "FEASIBLE_ESTIMATE")
-        return result(status, issues, allocations=allocations, demand=node_demand,
-                      links=link_demand, transfers=edge_ms, duration=duration,
-                      explored=explored, exhaustive=exhaustive)
+        return PlacementPlan(problem.task.task_id, status, allocations, demands, links, transfers,
+                             duration, limit, tuple(issues), outcome.explored, outcome.exhaustive,
+                             algorithm, outcome.exhaustive and outcome.assignment is not None,
+                             problem.frame_count)

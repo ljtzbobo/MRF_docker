@@ -1,0 +1,10 @@
+{
+  "simulation_only": true,
+  "scenarios": [
+    {"name": "chain-5", "nodes": 5, "hosts": 3, "shape": "chain", "seed": 11, "frames": 32},
+    {"name": "chain-8", "nodes": 8, "hosts": 3, "shape": "chain", "seed": 12, "frames": 8},
+    {"name": "branch-8", "nodes": 8, "hosts": 3, "shape": "dag", "seed": 13, "frames": 8},
+    {"name": "branch-12", "nodes": 12, "hosts": 3, "shape": "dag", "seed": 14, "frames": 8},
+    {"name": "chain-20", "nodes": 20, "hosts": 3, "shape": "chain", "seed": 15, "frames": 8}
+  ]
+}

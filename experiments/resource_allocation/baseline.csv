@@ -1,0 +1,16 @@
+scenario,algorithm,status,optimality_proven,estimated_completion_ms,planning_ms,explored,ratio_to_proven_exact
+chain-5,exact,FEASIBLE_ESTIMATE,True,1351.0,31.4093,363,1.0
+chain-5,chain_dp,FEASIBLE_ESTIMATE,True,1351.0,26.3563,342,1.0
+chain-5,heft,FEASIBLE_ESTIMATE,False,3989.4,0.6902,15,2.9529237601776464
+chain-8,exact,FEASIBLE_ESTIMATE,True,380.0,840.529,9804,1.0
+chain-8,chain_dp,FEASIBLE_ESTIMATE,True,380.0,786.0936,6582,1.0
+chain-8,heft,FEASIBLE_ESTIMATE,False,380.0,1.1242,24,1.0
+branch-8,exact,FEASIBLE_ESTIMATE,True,637.0,796.2994,9699,1.0
+branch-8,chain_dp,UNSUPPORTED_GRAPH,False,,0.223,0,
+branch-8,heft,FEASIBLE_ESTIMATE,False,637.0,1.0515,24,1.0
+branch-12,exact,SEARCH_LIMIT,False,2108.2,3525.3822,30000,
+branch-12,chain_dp,UNSUPPORTED_GRAPH,False,,0.6059,0,
+branch-12,heft,FEASIBLE_ESTIMATE,False,554.0,2.3799,36,
+chain-20,exact,SEARCH_LIMIT,False,2171.6,4945.8961,30000,
+chain-20,chain_dp,SEARCH_LIMIT,False,,5992.1475,30000,
+chain-20,heft,FEASIBLE_ESTIMATE,False,1465.0,4.9031,60,

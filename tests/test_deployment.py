@@ -11,6 +11,8 @@ from urllib.error import HTTPError
 from urllib.request import Request, urlopen
 from unittest.mock import patch
 
+import numpy as np
+
 from backend.repositories import JsonDocumentRepository
 from backend.services import TaskService
 from components.implementations.cni.data_link_component import encode_demo_frame
@@ -27,8 +29,11 @@ from resources import (ComponentMeasurement, MeasurementCatalog,
                        PhysicalHardwareProfile, PhysicalUsage)
 from resources.placement import (EdgeTransfer, PlacementPlanner, ProcessingNode)
 from scheduler import TaskScheduler
+from task_executor import DAGExecutionError, DAGExecutor
 from task_repr import parse_external_task, refine_business_task
-from task_repr.template.refinement import SpecificationNode
+from task_repr.template.refinement import (SpecificationEdge, SpecificationGraph,
+                                          SpecificationNode, SpecificationSemantics,
+                                          SpecificationTask)
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -108,13 +113,15 @@ class HttpWorkerRuntime:
         thread.join(timeout=2)
 
 
-def deployment_fixture(runtime):
+def deployment_fixture(runtime, task=None):
     request = configured_data_link_receive()
     request["deadline_ms"] = 1500
-    task = refine_business_task(parse_external_task(request)).task
+    if task is None:
+        task = refine_business_task(parse_external_task(request)).task
     match = match_task(task)
     sizes = {"C15": (4608, 3424), "C14": (3424, 3424),
-             "C17": (3424, 208), "C35": (208, 16), "C36": (16, 500)}
+             "C17": (3424, 208), "C35": (208, 16), "C36": (16, 500),
+             "C05": (2, 2), "C37": (2, 2)}
     profiles = tuple(ComponentMeasurement(
         binding.cid, f"{binding.cid}-local", "cpu", "test-hardware", (),
         binding.parameters, PhysicalUsage(100, 128 * 1024 * 1024, 1000000, 0, 0),
@@ -132,7 +139,164 @@ def deployment_fixture(runtime):
     return request, task, match, manager
 
 
+def merge_task(branched=True):
+    merge = SpecificationNode("join", "join", "iq_branch_merge",
+                              {"left": "iq/complex", "right": "iq/complex"},
+                              {"out": "iq/complex"},
+                              {"gain_left": 2, "gain_right": 3, "sample_rate_mhz": 0.001,
+                               "input_block_length": 2, "output_block_length": 2}, "join")
+    nodes = tuple(SpecificationNode(name, name, "fir_filter", {"in": "iq/complex"},
+                                    {"out": "iq/complex"}, {"coefficients": "[1]"}, name)
+                  for name in ("left", "right")) if branched else ()
+    edges = tuple(SpecificationEdge(name, "out", "join", name)
+                  for name in ("left", "right")) if branched else ()
+    boundaries = tuple({"direction": "source", "node_id": name if branched else "join",
+                        "port": "in" if branched else name, "format": "iq/complex",
+                        "business_node_id": name if branched else "join"}
+                       for name in ("left", "right")) + (
+        {"direction": "sink", "node_id": "join", "port": "out",
+         "format": "iq/complex", "business_node_id": "join"},)
+    graph = SpecificationGraph(nodes + (merge,), edges, boundaries,
+                               "merge-test", "1.0", "component_dag", {}, (), (), ())
+    return SpecificationTask("merge-test", SpecificationSemantics("test", "test", "rx", {}),
+                             {"arrival_ms": 0, "deadline_ms": 1000}, {}, graph,
+                             {"observed_at_ms": 0})
+
+
 class DeploymentTests(unittest.TestCase):
+    def test_deployment_uses_selected_algorithm_and_actual_frame_count(self):
+        frames = [{SOURCE: aligned_iq_frame(b"0123456789abcdef", 99, 0, 2)},
+                  {SOURCE: aligned_iq_frame(b"tail", 99, 1, 2)}]
+        for algorithm in ("chain_dp", "heft"):
+            with self.subTest(algorithm=algorithm):
+                runtime = LocalContainerRuntime()
+                _, task, match, manager = deployment_fixture(runtime)
+                result = manager.execute(task, match, iter(frames), algorithm=algorithm, frame_count=2)
+                self.assertEqual(result.plan.algorithm, algorithm)
+                self.assertEqual(result.plan.frame_count, 2)
+                self.assertEqual(result.plan.estimated_completion_ms, 10)
+                self.assertEqual(result.frame_outputs[-1][SINK].samples.tobytes(), b"0123456789abcdeftail")
+                self.assertEqual(runtime.stopped, list(reversed(runtime.started)))
+
+    def test_multiframe_deadline_rejection_happens_before_container_start(self):
+        runtime = LocalContainerRuntime()
+        _, task, match, manager = deployment_fixture(runtime)
+        task = replace(task, X={**task.X, "remaining_deadline_ms": 5})
+        frame = {SOURCE: aligned_iq_frame(b"hello", 1, 0, 1)}
+        with self.assertRaisesRegex(DeploymentError, "INFEASIBLE"):
+            manager.execute(task, match, [frame, frame])
+        self.assertFalse(runtime.started)
+        self.assertEqual(manager.scheduler.placement_snapshot()["active_tasks"], [])
+
+    def test_stream_frame_count_mismatch_releases_containers(self):
+        for supplied, expected in ((1, 2), (2, 1)):
+            with self.subTest(supplied=supplied, expected=expected):
+                runtime = LocalContainerRuntime()
+                _, task, match, manager = deployment_fixture(runtime)
+                frame = {SOURCE: aligned_iq_frame(b"hello", 1, 0, 1)}
+                with self.assertRaisesRegex(DeploymentError, "frame count differs"):
+                    manager.execute(task, match, iter([frame] * supplied), frame_count=expected)
+                self.assertEqual(runtime.stopped, list(reversed(runtime.started)))
+                self.assertEqual(manager.scheduler.placement_snapshot()["active_tasks"], [])
+
+    def assert_packet_equal(self, left, right):
+        np.testing.assert_array_equal(left.samples, right.samples)
+        self.assertEqual(left.samples.dtype, right.samples.dtype)
+        for field in ("sample_rate", "center_frequency", "timestamp", "domain", "metadata"):
+            self.assertEqual(getattr(left, field), getattr(right, field))
+
+    def test_local_and_container_streams_are_equivalent(self):
+        runtime = LocalContainerRuntime()
+        _, task, match, manager = deployment_fixture(runtime)
+        frames = [{SOURCE: aligned_iq_frame(payload, 91, index, 3)} for index, payload in
+                  ((1, b"abcdefghijklmnop"), (0, b"0123456789abcdef"), (2, b"tail"))]
+        local = DAGExecutor.from_match(task, match).execute_stream(frames)
+        # Docker 的本地对象只用于构造时校验，不能随帧重新创建。
+        with patch("task_executor.executor.create_runtime_component",
+                   wraps=create_runtime_component) as create:
+            deployed = manager.execute(task, match, iter(frames))
+        self.assertEqual(create.call_count, len(match.bindings))
+        self.assertEqual([frame[SINK].item_count for frame in deployed.frame_outputs], [0, 0, 36])
+        for expected, actual in zip(local, deployed.frame_outputs):
+            self.assert_packet_equal(expected.sink_outputs[SINK], actual[SINK])
+        self.assertEqual(len(runtime.started), 5)
+        self.assertEqual(runtime.stopped, list(reversed(runtime.started)))
+
+    def test_branch_join_and_multiport_root_are_equivalent(self):
+        left = DataPacket(np.array([1 + 1j, 2 + 2j]), 1000, 0, 0, "time")
+        right = DataPacket(np.array([3 + 3j, 4 + 4j]), 1000, 0, 0, "time")
+        for branched in (True, False):
+            with self.subTest(branched=branched):
+                runtime = LocalContainerRuntime()
+                _, task, match, manager = deployment_fixture(runtime, merge_task(branched))
+                inputs = {"left": left, "right": right}
+                frame = inputs if branched else {"join": inputs}
+                local = DAGExecutor.from_match(task, match).execute(frame)
+                deployed = manager.execute(task, match, [frame])
+                self.assert_packet_equal(local.sink_outputs["join"], deployed.frame_outputs[0]["join"])
+                np.testing.assert_array_equal(deployed.frame_outputs[0]["join"].samples,
+                                              2 * left.samples + 3 * right.samples)
+                self.assertEqual(runtime.stopped, list(reversed(runtime.started)))
+
+    def test_invalid_frames_match_local_errors_and_release_resources(self):
+        good = aligned_iq_frame(b"hello", 1, 0, 1)
+        bad_domain = replace(good, domain="frequency")
+        bad_dtype = replace(good, samples=good.samples.real)
+        bad_length = replace(good, samples=good.samples[:10])
+        for frame in ({}, {SOURCE: good, "unknown": good}, {SOURCE: {"wrong": good}},
+                      {SOURCE: bad_domain}, {SOURCE: bad_dtype}, {SOURCE: bad_length}):
+            with self.subTest(frame=list(frame)):
+                runtime = LocalContainerRuntime()
+                _, task, match, manager = deployment_fixture(runtime)
+                with self.assertRaises(DAGExecutionError) as local:
+                    DAGExecutor.from_match(task, match).execute(frame)
+                with self.assertRaises(DeploymentError) as deployed:
+                    manager.execute(task, match, [frame])
+                self.assertEqual(str(local.exception), str(deployed.exception))
+                self.assertEqual(runtime.stopped, list(reversed(runtime.started)))
+                self.assertEqual(manager.scheduler.placement_snapshot()["active_tasks"], [])
+
+    def test_container_output_is_validated_before_downstream_invocation(self):
+        class BadOutputRuntime(LocalContainerRuntime):
+            def process(self, handle, packets):
+                output = super().process(handle, packets)
+                if self.instances[handle].cid == "C15":
+                    return replace(output, domain="bits")
+                raise AssertionError("invalid output reached downstream node")
+
+        runtime = BadOutputRuntime()
+        _, task, match, manager = deployment_fixture(runtime)
+        with self.assertRaisesRegex(DeploymentError, f"node {SOURCE} output: .*domain"):
+            manager.execute(task, match, [{SOURCE: aligned_iq_frame(b"hello", 1, 0, 1)}])
+        self.assertEqual(runtime.stopped, list(reversed(runtime.started)))
+        self.assertEqual(manager.scheduler.placement_snapshot()["active_tasks"], [])
+
+    def test_container_path_preserves_runtime_port_dimension_constraint(self):
+        runtime = LocalContainerRuntime()
+        _, task, match, manager = deployment_fixture(runtime, merge_task(False))
+        packet = DataPacket(np.ones((1, 2), dtype=complex), 1000, 0, 0, "time")
+        # iq/complex 的 OPS 允许二维，C37 的实际端口只允许一维。
+        with patch.object(runtime, "process") as invoke:
+            with self.assertRaisesRegex(DeploymentError, "join input: .*dimensions"):
+                manager.execute(task, match, [{"join": {"left": packet, "right": packet}}])
+        invoke.assert_not_called()
+        self.assertEqual(runtime.stopped, list(reversed(runtime.started)))
+
+    def test_signal_constraints_are_shared_with_container_adapter(self):
+        good = DataPacket(np.ones(2, dtype=complex), 1000, 0, 0, "time")
+        for bad, detail in ((replace(good, sample_rate=2000), "sample rate"),
+                            (replace(good, samples=good.samples[:1]), "block length")):
+            with self.subTest(detail=detail):
+                runtime = LocalContainerRuntime()
+                _, task, match, manager = deployment_fixture(runtime, merge_task(False))
+                frame = {"join": {"left": bad, "right": good}}
+                with self.assertRaisesRegex(DAGExecutionError, detail) as local:
+                    DAGExecutor.from_match(task, match).execute(frame)
+                with self.assertRaisesRegex(DeploymentError, detail) as deployed:
+                    manager.execute(task, match, [frame])
+                self.assertEqual(str(local.exception), str(deployed.exception))
+                self.assertEqual(manager.scheduler.placement_snapshot()["active_tasks"], [])
+
     def test_all_five_workers_transfer_over_http(self):
         runtime = HttpWorkerRuntime()
         request, task, match, manager = deployment_fixture(runtime)

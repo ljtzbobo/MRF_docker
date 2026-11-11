@@ -1,0 +1,508 @@
+{
+  "simulation_only": true,
+  "created_at_utc": "2026-11-10T04:02:34.963723+00:00",
+  "python": "3.10.6",
+  "platform": "Windows-10-10.0.26200-SP0",
+  "max_assignments": 30000,
+  "scenarios": [
+    {
+      "name": "chain-5",
+      "nodes": 5,
+      "hosts": 3,
+      "shape": "chain",
+      "seed": 11,
+      "frames": 32
+    },
+    {
+      "name": "chain-8",
+      "nodes": 8,
+      "hosts": 3,
+      "shape": "chain",
+      "seed": 12,
+      "frames": 8
+    },
+    {
+      "name": "branch-8",
+      "nodes": 8,
+      "hosts": 3,
+      "shape": "dag",
+      "seed": 13,
+      "frames": 8
+    },
+    {
+      "name": "branch-12",
+      "nodes": 12,
+      "hosts": 3,
+      "shape": "dag",
+      "seed": 14,
+      "frames": 8
+    },
+    {
+      "name": "chain-20",
+      "nodes": 20,
+      "hosts": 3,
+      "shape": "chain",
+      "seed": 15,
+      "frames": 8
+    }
+  ],
+  "results": [
+    {
+      "scenario": "chain-5",
+      "algorithm": "exact",
+      "status": "FEASIBLE_ESTIMATE",
+      "optimality_proven": true,
+      "estimated_completion_ms": 1351.0,
+      "planning_ms": 31.4093,
+      "explored": 363,
+      "ratio_to_proven_exact": 1.0,
+      "node_demand": {
+        "host-0": {
+          "cpu_millicores": 0.0,
+          "memory_bytes": 0.0,
+          "bandwidth_bytes_per_s": 0.0,
+          "dsp_units": 0.0,
+          "fpga_units": 0.0
+        },
+        "host-1": {
+          "cpu_millicores": 0.0,
+          "memory_bytes": 0.0,
+          "bandwidth_bytes_per_s": 0.0,
+          "dsp_units": 0.0,
+          "fpga_units": 0.0
+        },
+        "host-2": {
+          "cpu_millicores": 50.0,
+          "memory_bytes": 13312.0,
+          "bandwidth_bytes_per_s": 500.0,
+          "dsp_units": 0.0,
+          "fpga_units": 5.0
+        }
+      },
+      "issues": []
+    },
+    {
+      "scenario": "chain-5",
+      "algorithm": "chain_dp",
+      "status": "FEASIBLE_ESTIMATE",
+      "optimality_proven": true,
+      "estimated_completion_ms": 1351.0,
+      "planning_ms": 26.3563,
+      "explored": 342,
+      "ratio_to_proven_exact": 1.0,
+      "node_demand": {
+        "host-0": {
+          "cpu_millicores": 0.0,
+          "memory_bytes": 0.0,
+          "bandwidth_bytes_per_s": 0.0,
+          "dsp_units": 0.0,
+          "fpga_units": 0.0
+        },
+        "host-1": {
+          "cpu_millicores": 0.0,
+          "memory_bytes": 0.0,
+          "bandwidth_bytes_per_s": 0.0,
+          "dsp_units": 0.0,
+          "fpga_units": 0.0
+        },
+        "host-2": {
+          "cpu_millicores": 50.0,
+          "memory_bytes": 13312.0,
+          "bandwidth_bytes_per_s": 500.0,
+          "dsp_units": 0.0,
+          "fpga_units": 5.0
+        }
+      },
+      "issues": []
+    },
+    {
+      "scenario": "chain-5",
+      "algorithm": "heft",
+      "status": "FEASIBLE_ESTIMATE",
+      "optimality_proven": false,
+      "estimated_completion_ms": 3989.4,
+      "planning_ms": 0.6902,
+      "explored": 15,
+      "ratio_to_proven_exact": 2.9529237601776464,
+      "node_demand": {
+        "host-0": {
+          "cpu_millicores": 251.0,
+          "memory_bytes": 10240.0,
+          "bandwidth_bytes_per_s": 400.0,
+          "dsp_units": 0.0,
+          "fpga_units": 0.0
+        },
+        "host-1": {
+          "cpu_millicores": 0.0,
+          "memory_bytes": 0.0,
+          "bandwidth_bytes_per_s": 0.0,
+          "dsp_units": 0.0,
+          "fpga_units": 0.0
+        },
+        "host-2": {
+          "cpu_millicores": 10.0,
+          "memory_bytes": 4096.0,
+          "bandwidth_bytes_per_s": 100.0,
+          "dsp_units": 0.0,
+          "fpga_units": 1.0
+        }
+      },
+      "issues": []
+    },
+    {
+      "scenario": "chain-8",
+      "algorithm": "exact",
+      "status": "FEASIBLE_ESTIMATE",
+      "optimality_proven": true,
+      "estimated_completion_ms": 380.0,
+      "planning_ms": 840.529,
+      "explored": 9804,
+      "ratio_to_proven_exact": 1.0,
+      "node_demand": {
+        "host-0": {
+          "cpu_millicores": 0.0,
+          "memory_bytes": 0.0,
+          "bandwidth_bytes_per_s": 0.0,
+          "dsp_units": 0.0,
+          "fpga_units": 0.0
+        },
+        "host-1": {
+          "cpu_millicores": 0.0,
+          "memory_bytes": 0.0,
+          "bandwidth_bytes_per_s": 0.0,
+          "dsp_units": 0.0,
+          "fpga_units": 0.0
+        },
+        "host-2": {
+          "cpu_millicores": 80.0,
+          "memory_bytes": 22528.0,
+          "bandwidth_bytes_per_s": 800.0,
+          "dsp_units": 0.0,
+          "fpga_units": 8.0
+        }
+      },
+      "issues": []
+    },
+    {
+      "scenario": "chain-8",
+      "algorithm": "chain_dp",
+      "status": "FEASIBLE_ESTIMATE",
+      "optimality_proven": true,
+      "estimated_completion_ms": 380.0,
+      "planning_ms": 786.0936,
+      "explored": 6582,
+      "ratio_to_proven_exact": 1.0,
+      "node_demand": {
+        "host-0": {
+          "cpu_millicores": 0.0,
+          "memory_bytes": 0.0,
+          "bandwidth_bytes_per_s": 0.0,
+          "dsp_units": 0.0,
+          "fpga_units": 0.0
+        },
+        "host-1": {
+          "cpu_millicores": 0.0,
+          "memory_bytes": 0.0,
+          "bandwidth_bytes_per_s": 0.0,
+          "dsp_units": 0.0,
+          "fpga_units": 0.0
+        },
+        "host-2": {
+          "cpu_millicores": 80.0,
+          "memory_bytes": 22528.0,
+          "bandwidth_bytes_per_s": 800.0,
+          "dsp_units": 0.0,
+          "fpga_units": 8.0
+        }
+      },
+      "issues": []
+    },
+    {
+      "scenario": "chain-8",
+      "algorithm": "heft",
+      "status": "FEASIBLE_ESTIMATE",
+      "optimality_proven": false,
+      "estimated_completion_ms": 380.0,
+      "planning_ms": 1.1242,
+      "explored": 24,
+      "ratio_to_proven_exact": 1.0,
+      "node_demand": {
+        "host-0": {
+          "cpu_millicores": 0.0,
+          "memory_bytes": 0.0,
+          "bandwidth_bytes_per_s": 0.0,
+          "dsp_units": 0.0,
+          "fpga_units": 0.0
+        },
+        "host-1": {
+          "cpu_millicores": 0.0,
+          "memory_bytes": 0.0,
+          "bandwidth_bytes_per_s": 0.0,
+          "dsp_units": 0.0,
+          "fpga_units": 0.0
+        },
+        "host-2": {
+          "cpu_millicores": 80.0,
+          "memory_bytes": 22528.0,
+          "bandwidth_bytes_per_s": 800.0,
+          "dsp_units": 0.0,
+          "fpga_units": 8.0
+        }
+      },
+      "issues": []
+    },
+    {
+      "scenario": "branch-8",
+      "algorithm": "exact",
+      "status": "FEASIBLE_ESTIMATE",
+      "optimality_proven": true,
+      "estimated_completion_ms": 637.0,
+      "planning_ms": 796.2994,
+      "explored": 9699,
+      "ratio_to_proven_exact": 1.0,
+      "node_demand": {
+        "host-0": {
+          "cpu_millicores": 0.0,
+          "memory_bytes": 0.0,
+          "bandwidth_bytes_per_s": 0.0,
+          "dsp_units": 0.0,
+          "fpga_units": 0.0
+        },
+        "host-1": {
+          "cpu_millicores": 0.0,
+          "memory_bytes": 0.0,
+          "bandwidth_bytes_per_s": 0.0,
+          "dsp_units": 0.0,
+          "fpga_units": 0.0
+        },
+        "host-2": {
+          "cpu_millicores": 80.0,
+          "memory_bytes": 25600.0,
+          "bandwidth_bytes_per_s": 800.0,
+          "dsp_units": 0.0,
+          "fpga_units": 8.0
+        }
+      },
+      "issues": []
+    },
+    {
+      "scenario": "branch-8",
+      "algorithm": "chain_dp",
+      "status": "UNSUPPORTED_GRAPH",
+      "optimality_proven": false,
+      "estimated_completion_ms": null,
+      "planning_ms": 0.223,
+      "explored": 0,
+      "ratio_to_proven_exact": null,
+      "node_demand": {},
+      "issues": [
+        "chain_dp requires a single linear component chain"
+      ]
+    },
+    {
+      "scenario": "branch-8",
+      "algorithm": "heft",
+      "status": "FEASIBLE_ESTIMATE",
+      "optimality_proven": false,
+      "estimated_completion_ms": 637.0,
+      "planning_ms": 1.0515,
+      "explored": 24,
+      "ratio_to_proven_exact": 1.0,
+      "node_demand": {
+        "host-0": {
+          "cpu_millicores": 0.0,
+          "memory_bytes": 0.0,
+          "bandwidth_bytes_per_s": 0.0,
+          "dsp_units": 0.0,
+          "fpga_units": 0.0
+        },
+        "host-1": {
+          "cpu_millicores": 0.0,
+          "memory_bytes": 0.0,
+          "bandwidth_bytes_per_s": 0.0,
+          "dsp_units": 0.0,
+          "fpga_units": 0.0
+        },
+        "host-2": {
+          "cpu_millicores": 80.0,
+          "memory_bytes": 25600.0,
+          "bandwidth_bytes_per_s": 800.0,
+          "dsp_units": 0.0,
+          "fpga_units": 8.0
+        }
+      },
+      "issues": []
+    },
+    {
+      "scenario": "branch-12",
+      "algorithm": "exact",
+      "status": "SEARCH_LIMIT",
+      "optimality_proven": false,
+      "estimated_completion_ms": 2108.2,
+      "planning_ms": 3525.3822,
+      "explored": 30000,
+      "ratio_to_proven_exact": null,
+      "node_demand": {
+        "host-0": {
+          "cpu_millicores": 382.0,
+          "memory_bytes": 13312.0,
+          "bandwidth_bytes_per_s": 700.0,
+          "dsp_units": 0.0,
+          "fpga_units": 0.0
+        },
+        "host-1": {
+          "cpu_millicores": 30.0,
+          "memory_bytes": 9216.0,
+          "bandwidth_bytes_per_s": 300.0,
+          "dsp_units": 3.0,
+          "fpga_units": 0.0
+        },
+        "host-2": {
+          "cpu_millicores": 20.0,
+          "memory_bytes": 5120.0,
+          "bandwidth_bytes_per_s": 200.0,
+          "dsp_units": 0.0,
+          "fpga_units": 2.0
+        }
+      },
+      "issues": [
+        "assignment search limit reached; optimum is unverified",
+        "component or placement search limit reached"
+      ]
+    },
+    {
+      "scenario": "branch-12",
+      "algorithm": "chain_dp",
+      "status": "UNSUPPORTED_GRAPH",
+      "optimality_proven": false,
+      "estimated_completion_ms": null,
+      "planning_ms": 0.6059,
+      "explored": 0,
+      "ratio_to_proven_exact": null,
+      "node_demand": {},
+      "issues": [
+        "chain_dp requires a single linear component chain"
+      ]
+    },
+    {
+      "scenario": "branch-12",
+      "algorithm": "heft",
+      "status": "FEASIBLE_ESTIMATE",
+      "optimality_proven": false,
+      "estimated_completion_ms": 554.0,
+      "planning_ms": 2.3799,
+      "explored": 36,
+      "ratio_to_proven_exact": null,
+      "node_demand": {
+        "host-0": {
+          "cpu_millicores": 0.0,
+          "memory_bytes": 0.0,
+          "bandwidth_bytes_per_s": 0.0,
+          "dsp_units": 0.0,
+          "fpga_units": 0.0
+        },
+        "host-1": {
+          "cpu_millicores": 120.0,
+          "memory_bytes": 32768.0,
+          "bandwidth_bytes_per_s": 1200.0,
+          "dsp_units": 12.0,
+          "fpga_units": 0.0
+        },
+        "host-2": {
+          "cpu_millicores": 0.0,
+          "memory_bytes": 0.0,
+          "bandwidth_bytes_per_s": 0.0,
+          "dsp_units": 0.0,
+          "fpga_units": 0.0
+        }
+      },
+      "issues": []
+    },
+    {
+      "scenario": "chain-20",
+      "algorithm": "exact",
+      "status": "SEARCH_LIMIT",
+      "optimality_proven": false,
+      "estimated_completion_ms": 2171.6,
+      "planning_ms": 4945.8961,
+      "explored": 30000,
+      "ratio_to_proven_exact": null,
+      "node_demand": {
+        "host-0": {
+          "cpu_millicores": 662.0,
+          "memory_bytes": 27648.0,
+          "bandwidth_bytes_per_s": 1100.0,
+          "dsp_units": 0.0,
+          "fpga_units": 0.0
+        },
+        "host-1": {
+          "cpu_millicores": 0.0,
+          "memory_bytes": 0.0,
+          "bandwidth_bytes_per_s": 0.0,
+          "dsp_units": 0.0,
+          "fpga_units": 0.0
+        },
+        "host-2": {
+          "cpu_millicores": 90.0,
+          "memory_bytes": 28672.0,
+          "bandwidth_bytes_per_s": 900.0,
+          "dsp_units": 0.0,
+          "fpga_units": 9.0
+        }
+      },
+      "issues": [
+        "assignment search limit reached; optimum is unverified",
+        "component or placement search limit reached"
+      ]
+    },
+    {
+      "scenario": "chain-20",
+      "algorithm": "chain_dp",
+      "status": "SEARCH_LIMIT",
+      "optimality_proven": false,
+      "estimated_completion_ms": null,
+      "planning_ms": 5992.1475,
+      "explored": 30000,
+      "ratio_to_proven_exact": null,
+      "node_demand": {},
+      "issues": [
+        "assignment search limit reached; optimum is unverified",
+        "component or placement search limit reached"
+      ]
+    },
+    {
+      "scenario": "chain-20",
+      "algorithm": "heft",
+      "status": "FEASIBLE_ESTIMATE",
+      "optimality_proven": false,
+      "estimated_completion_ms": 1465.0,
+      "planning_ms": 4.9031,
+      "explored": 60,
+      "ratio_to_proven_exact": null,
+      "node_demand": {
+        "host-0": {
+          "cpu_millicores": 0.0,
+          "memory_bytes": 0.0,
+          "bandwidth_bytes_per_s": 0.0,
+          "dsp_units": 0.0,
+          "fpga_units": 0.0
+        },
+        "host-1": {
+          "cpu_millicores": 200.0,
+          "memory_bytes": 55296.0,
+          "bandwidth_bytes_per_s": 2000.0,
+          "dsp_units": 20.0,
+          "fpga_units": 0.0
+        },
+        "host-2": {
+          "cpu_millicores": 0.0,
+          "memory_bytes": 0.0,
+          "bandwidth_bytes_per_s": 0.0,
+          "dsp_units": 0.0,
+          "fpga_units": 0.0
+        }
+      },
+      "issues": []
+    }
+  ]
+}

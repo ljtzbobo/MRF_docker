@@ -3,15 +3,14 @@
 from dataclasses import dataclass
 from dataclasses import asdict
 from itertools import chain
+from collections.abc import Sized
 from typing import Iterable, Mapping
 
 from components.runtime import DataPacket
-from matching.contracts import validate_runtime_packet, validate_signal_packet
 from matching.matcher import StaticMatchResult
-from components.specs import load_protocol_specs
 from resources.placement import PlacementPlan
 from scheduler import TaskScheduler
-from task_executor import DAGExecutor
+from task_executor import DAGExecutionError, DAGExecutor
 from task_repr.template.refinement import SpecificationTask
 
 from .docker_runtime import DockerCleanupError
@@ -54,21 +53,30 @@ class DeploymentManager:
 
     def execute(self, task: SpecificationTask, match: StaticMatchResult,
                 frames: Iterable[Mapping[str, DataPacket]],
-                fixed_nodes: dict[str, str] | None = None) -> DeploymentResult:
+                fixed_nodes: dict[str, str] | None = None, *, algorithm="exact",
+                frame_count: int | None = None, max_assignments=100000) -> DeploymentResult:
         if not isinstance(task, SpecificationTask) or match.status != "MATCHED" or not match.execution_graph:
             raise DeploymentError("deployment requires a fully matched specification DAG")
-        DAGExecutor.from_match(task, match)
+        executor = DAGExecutor.from_match(task, match)
         graph = match.execution_graph
+        # 有长度的批次直接计数；生成器可显式声明帧数以保持流式消费。
+        if frame_count is None:
+            if not isinstance(frames, Sized):
+                frames = tuple(frames)
+            frame_count = len(frames)
+        if type(frame_count) is not int or frame_count < 1:
+            raise DeploymentError("deployment requires at least one input frame")
         frames = iter(frames)
         try:
             first_frame = next(frames)
         except StopIteration as exc:
             raise DeploymentError("deployment requires at least one input frame") from exc
-        preview = self.scheduler.preview_placement(task, match, fixed_nodes)
+        options = dict(algorithm=algorithm, frame_count=frame_count, max_assignments=max_assignments)
+        preview = self.scheduler.preview_placement(task, match, fixed_nodes, **options)
         if preview.status != "FEASIBLE_ESTIMATE":
             raise DeploymentError(f"{preview.status}: {'; '.join(preview.issues)}")
         self.runtime.preflight(preview.allocations)
-        plan = self.scheduler.submit_placement(task, match, fixed_nodes)
+        plan = self.scheduler.submit_placement(task, match, fixed_nodes, **options)
         handles = {}
         failure = None
         result = None
@@ -80,45 +88,20 @@ class DeploymentManager:
                 raise DeploymentError("placement bindings differ from the execution graph")
             for node_id in graph["topological_order"]:
                 handles[node_id] = self.runtime.start(allocations[node_id], nodes[node_id])
-            inputs = {node_id: [] for node_id in nodes}
-            for edge in graph["edges"]:
-                inputs[edge["target"]].append(edge)
-            source_boundaries = [item for item in graph["boundaries"]
-                                 if item["direction"] == "source"]
-            roots = {item["node_id"]: item for item in source_boundaries}
-            if len(roots) != len(source_boundaries):
-                raise DeploymentError("deployment requires one source port per root node")
-            sinks = {item["node_id"]: item for item in graph["boundaries"]
-                     if item["direction"] == "sink"}
-            task_nodes = {node.node_id: node for node in task.G.nodes}
+
+            def docker_invoke(node_id, packets):
+                return self.runtime.process(handles[node_id], packets)
+
             outputs = []
-            protocols = load_protocol_specs()
             for frame in chain((first_frame,), frames):
-                if not isinstance(frame, Mapping) or set(frame) != set(roots):
-                    raise DeploymentError("frame must supply every source boundary")
-                produced = {}
-                for node_id in graph["topological_order"]:
-                    node = nodes[node_id]
-                    packets = ({roots[node_id]["port"]: frame[node_id]} if node_id in roots else
-                               {edge["target_port"]: produced[edge["source"]]
-                                for edge in inputs[node_id]})
-                    if set(packets) != set(node["inputs"]):
-                        raise DeploymentError(f"{node_id} has incomplete input dependencies")
-                    for port, packet in packets.items():
-                        error = validate_runtime_packet(node["inputs"][port], packet, protocols=protocols)
-                        error = error or validate_signal_packet(task, task_nodes[node_id],
-                            packet, "input", match.bindings[node_id])
-                        if error:
-                            raise DeploymentError(f"{node_id}.{port}: {error}")
-                    output = self.runtime.process(handles[node_id], packets)
-                    output_port, format_name = next(iter(node["outputs"].items()))
-                    error = validate_runtime_packet(format_name, output, protocols=protocols)
-                    error = error or validate_signal_packet(task, task_nodes[node_id],
-                        output, "output", match.bindings[node_id])
-                    if error:
-                        raise DeploymentError(f"{node_id}.{output_port}: {error}")
-                    produced[node_id] = output
-                outputs.append({node_id: produced[node_id] for node_id in sinks})
+                if len(outputs) >= frame_count:
+                    raise DeploymentError("input frame count differs from placement estimate")
+                try:
+                    outputs.append(executor._execute_frame(frame, docker_invoke).sink_outputs)
+                except DAGExecutionError as exc:
+                    raise DeploymentError(str(exc)) from exc
+            if len(outputs) != frame_count:
+                raise DeploymentError("input frame count differs from placement estimate")
             result = DeploymentResult(task.task_id, plan, graph, tuple(outputs))
         except BaseException as exc:
             failure = exc

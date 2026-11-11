@@ -138,6 +138,7 @@ class DAGExecutor:
         self._strict = False
         self._bindings: dict[str, ComponentBinding] = {}
         self._protocols = None
+        self._packet_ports = {}
 
     @classmethod
     def from_match(cls, task: TaskRepresentation | SpecificationTask,
@@ -245,12 +246,21 @@ class DAGExecutor:
             if error:
                 raise DAGExecutionError(f"edge {edge.source}->{edge.target}: {error}")
 
-    def _check_packet(self, node_id, packet, direction, component, port_name=None):
+        # 只保存已验证的端口描述；Docker 调用不使用这些本地组件执行计算。
+        self._packet_ports = {
+            node_id: {
+                "input": {name: (getattr(component, "input_ports", None) or {}).get(
+                    name, component.input_port) for name in self._nodes[node_id].inputs},
+                "output": {name: component.output_port for name in self._nodes[node_id].outputs},
+            }
+            for node_id, component in components.items()
+        }
+
+    def _check_packet(self, node_id, packet, direction, port_name=None):
         node = self._nodes[node_id]
         formats = node.inputs if direction == "input" else node.outputs
         port_name = port_name or next(iter(formats))
-        port = ((getattr(component, "input_ports", None) or {}).get(port_name, component.input_port)
-                if direction == "input" else component.output_port)
+        port = self._packet_ports[node_id][direction][port_name]
         error = validate_runtime_packet(formats[port_name], packet,
                                         port, self._protocols)
         error = error or validate_signal_packet(self.task, node, packet, direction,
@@ -265,6 +275,39 @@ class DAGExecutor:
     def execute(self, sources: Mapping[str, DataPacket],
                 *, _components=None) -> ExecutionResult:
         """让每个选中节点处理一次数据包，并返回所有汇点的输出。"""
+        return self._execute_frame(sources, _components=_components)
+
+    def _collect_inputs(self, node_id, sources, outputs):
+        if node_id in self.roots:
+            supplied = sources[node_id]
+            return (supplied if isinstance(supplied, Mapping) else
+                    {next(iter(self._nodes[node_id].inputs)): supplied})
+        return {edge.target_port: outputs[edge.source]
+                for edge in self._incoming[node_id]}
+
+    def _validate_inputs(self, node_id, packets):
+        if set(packets) != set(self._nodes[node_id].inputs):
+            raise DAGExecutionError(f"node {node_id} has missing input ports")
+        if self._strict:
+            for port_name, packet in packets.items():
+                self._check_packet(node_id, packet, "input", port_name)
+
+    def _validate_output(self, node_id, output):
+        if self._strict:
+            self._check_packet(node_id, output, "output")
+
+    @staticmethod
+    def _local_invoke(node_id, packets, components):
+        component = components[node_id]
+        return (component.process(next(iter(packets.values()))) if len(packets) == 1
+                else component.process_inputs(packets))
+
+    def _execute_frame(self, sources, invoke=None, *, _components=None) -> ExecutionResult:
+        """共用单帧数据流；invoke 只负责调用节点，返回完整执行结果。
+
+        外部调用适配器复用 from_match 验证的端口，不创建或执行本地组件。
+        远程测量不在此生成；只有本地执行结果包含组件 metrics。
+        """
         if self.status == "running":
             raise DAGExecutionError("executor is already running")
         self.status = "running"
@@ -282,36 +325,27 @@ class DAGExecutor:
                     raise TypeError(f"source {node_id} requires a DataPacket")
 
             # 普通调用隔离状态；连续帧会话显式复用同一组组件实例。
-            components = _components if _components is not None else self._create_components()
-            if self._strict:
-                self._check_contracts(components)
+            components = {}
+            if invoke is None:
+                components = _components if _components is not None else self._create_components()
+                if self._strict:
+                    self._check_contracts(components)
+                invoke = lambda node_id, packets: self._local_invoke(node_id, packets, components)
 
             # 按拓扑顺序沿边取上游输出；未绑定根节点直接转发源数据包。
             outputs = {}
             for node_id in self.execution_order:
-                if node_id in self.roots:
-                    supplied = sources[node_id]
-                    packets = (supplied if isinstance(supplied, Mapping) else
-                               {next(iter(self._nodes[node_id].inputs)): supplied})
-                else:
-                    packets = {edge.target_port: outputs[edge.source]
-                               for edge in self._incoming[node_id]}
-                if set(packets) != set(self._nodes[node_id].inputs):
-                    raise DAGExecutionError(f"node {node_id} has missing input ports")
-                component = components.get(node_id)
-                if component is None:
+                packets = self._collect_inputs(node_id, sources, outputs)
+                self._validate_inputs(node_id, packets)
+                if node_id not in self.instances:
                     outputs[node_id] = next(iter(packets.values()))
                     continue
-                if self._strict:
-                    for port_name, packet in packets.items():
-                        self._check_packet(node_id, packet, "input", component, port_name)
                 try:
-                    outputs[node_id] = (component.process(next(iter(packets.values())))
-                                        if len(packets) == 1 else component.process_inputs(packets))
+                    outputs[node_id] = invoke(node_id, packets)
                 except Exception as exc:
-                    raise DAGExecutionError(f"node {node_id} ({component.cid}) failed: {exc}") from exc
-                if self._strict:
-                    self._check_packet(node_id, outputs[node_id], "output", component)
+                    raise DAGExecutionError(
+                        f"node {node_id} ({self.instances[node_id].cid}) failed: {exc}") from exc
+                self._validate_output(node_id, outputs[node_id])
 
             # 子图执行完成不等于整个任务完成，分别记录两种完成状态。
             result = ExecutionResult(
@@ -326,7 +360,7 @@ class DAGExecutor:
             )
             self.status = "completed"
             return result
-        except Exception:
+        except BaseException:
             self.status = "failed"
             raise
 

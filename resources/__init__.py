@@ -6,10 +6,10 @@ from .models import (ExecutionProfile, ResourceLevels, ResourceProfile,
 from .measurements import (ComponentMeasurement, MeasurementCatalog,
                            PhysicalHardwareProfile, PhysicalResourceState,
                            PhysicalUsage,
-                           load_measurements, load_physical_hardware)
+                           load_measurements, load_physical_hardware, save_measurements)
 
 __all__ = ["ComponentMeasurement", "ExecutionProfile", "HardwareProfile",
            "MeasurementCatalog", "PhysicalHardwareProfile", "PhysicalResourceState",
            "PhysicalUsage",
            "ResourceLevels", "ResourceProfile", "Resources", "SimulationProfile",
-           "load_measurements", "load_physical_hardware"]
+           "load_measurements", "load_physical_hardware", "save_measurements"]

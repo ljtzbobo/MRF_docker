@@ -2,7 +2,7 @@ import json
 from dataclasses import replace
 from pathlib import Path
 import unittest
-from unittest.mock import patch
+from unittest.mock import Mock, patch
 
 import numpy as np
 
@@ -124,6 +124,24 @@ class MatchedDAGExecutorTests(unittest.TestCase):
         match = match_task(task)
         self.assertEqual(match.status, "MATCHED", match.to_dict())
         return DAGExecutor.from_match(task, match)
+
+    def test_external_invoker_failure_state_retry_and_metrics(self):
+        executor = self.make_executor()
+        components = executor._create_components()
+
+        def invoke(node_id, packets):
+            self.assertEqual(executor.status, "running")
+            return executor._local_invoke(node_id, packets, components)
+
+        with patch.object(executor, "_create_components", side_effect=AssertionError("recreated")):
+            with self.assertRaisesRegex(DAGExecutionError, "node ddc-node .* failed: remote failure"):
+                executor._execute_frame({"ddc-node": signal_packet()},
+                                        invoke=Mock(side_effect=RuntimeError("remote failure")))
+            self.assertEqual(executor.status, "failed")
+            result = executor._execute_frame({"ddc-node": signal_packet()}, invoke)
+        self.assertTrue(executor.completed)
+        self.assertTrue(result.full_task_completed)
+        self.assertEqual(result.metrics, {})
 
     def test_signal_analysis_processes_three_components(self):
         executor = self.make_executor()

@@ -1,6 +1,6 @@
 """按硬件和组件配置保存实测执行画像，单位不与仿真等级混用。"""
 
-from dataclasses import asdict, dataclass
+from dataclasses import MISSING, asdict, dataclass
 import json
 import math
 from pathlib import Path
@@ -61,8 +61,14 @@ class ComponentMeasurement:
     output_bytes: int
     sample_count: int
     source: str
+    timing_scope: str = "unspecified"
+    setup_sample_count: int = 1
 
     def __post_init__(self) -> None:
+        if self.timing_scope not in ("unspecified", "component_process", "docker_http_roundtrip", "synthetic"):
+            raise ValueError("unknown measurement timing_scope")
+        if type(self.setup_sample_count) is not int or self.setup_sample_count < 1:
+            raise ValueError("setup_sample_count must be positive")
         if any(not isinstance(value, str) or not value.strip() for value in
                (self.cid, self.implementation_id, self.hardware_id, self.source)):
             raise ValueError("measurement identifiers and source must be nonempty")
@@ -119,10 +125,11 @@ def load_measurements(path: str | Path) -> MeasurementCatalog:
     raw = json.loads(Path(path).read_text(encoding="utf-8"))
     if not isinstance(raw, dict) or set(raw) != {"schema_version", "profiles"} or type(raw["schema_version"]) is not int or raw["schema_version"] != 1 or not isinstance(raw["profiles"], list):
         raise ValueError("measurement catalog requires schema_version 1 and profiles array")
-    required = set(ComponentMeasurement.__dataclass_fields__)
+    fields = ComponentMeasurement.__dataclass_fields__
+    required = {key for key, field in fields.items() if field.default is MISSING}
     profiles = []
     for index, row in enumerate(raw["profiles"]):
-        if not isinstance(row, dict) or set(row) != required:
+        if not isinstance(row, dict) or not required <= set(row) or set(row) - set(fields):
             raise ValueError(f"profiles[{index}] has missing or unknown fields")
         for key in ("cid", "implementation_id", "hardware_id", "source"):
             if not isinstance(row[key], str) or not row[key].strip():
@@ -150,8 +157,17 @@ def load_measurements(path: str | Path) -> MeasurementCatalog:
             processor=row["processor"], hardware_id=row["hardware_id"],
             required_features=tuple(row["required_features"]), parameters=row["parameters"],
             demand=demand, input_bytes=row["input_bytes"], output_bytes=row["output_bytes"],
-            sample_count=row["sample_count"], source=row["source"], **times))
+            sample_count=row["sample_count"], source=row["source"],
+            timing_scope=row.get("timing_scope", "unspecified"),
+            setup_sample_count=row.get("setup_sample_count", 1), **times))
     return MeasurementCatalog(tuple(profiles))
+
+
+def save_measurements(path: str | Path, catalog: MeasurementCatalog) -> None:
+    """Write version 1 catalogs, including optional measurement scope metadata."""
+    Path(path).write_text(json.dumps({"schema_version": 1,
+                                    "profiles": [asdict(item) for item in catalog.profiles]},
+                                   ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
 
 
 def load_physical_hardware(path: str | Path) -> PhysicalHardwareProfile:

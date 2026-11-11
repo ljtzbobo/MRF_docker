@@ -110,8 +110,9 @@ class PlacementSchedulerTests(unittest.TestCase):
         plan = planner.plan(task, match, self.state)
         self.assertEqual(plan.status, "FEASIBLE_ESTIMATE")
         self.assertEqual(plan.allocations[0].cid, "C34")
+        self.assertFalse(plan.optimality_proven)  # The other static CID has no calibration.
 
-    def test_branch_dependencies_use_longest_path_and_validate_whole_graph(self):
+    def test_branch_dependencies_use_serial_cost_and_validate_whole_graph(self):
         root, middle, end = self.task.G.nodes
         branch = replace(middle, node_id="branch")
         joined = replace(end, node_id="join")
@@ -132,7 +133,7 @@ class PlacementSchedulerTests(unittest.TestCase):
         planner = PlacementPlanner(self.nodes, self.links, self.planner.measurements, transfers)
         plan = planner.plan(task, match, self.state,
                             {key: "node-a" for key in bindings})
-        self.assertEqual(plan.estimated_completion_ms, 6)
+        self.assertEqual(plan.estimated_completion_ms, 8)
         self.assertEqual(plan.status, "FEASIBLE_ESTIMATE")
         with self.assertRaisesRegex(ValueError, "complete matched DAG"):
             planner.plan(task, replace(match, edges=match.edges[:-1]), self.state)

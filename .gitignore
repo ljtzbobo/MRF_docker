@@ -1,27 +1,30 @@
-__pycache__/
-*.py[cod]
-*.pyo
-
+# Python environments and caches
 .venv/
 venv/
 env/
-
+__pycache__/
+*.py[cod]
 .pytest_cache/
 .mypy_cache/
 .ruff_cache/
 
-outputs/
-*.log
+# Frontend dependencies and build output
+node_modules/
+dist/
+*.tsbuildinfo
 
-temp_paper*.txt
-_paper_hybrid_redundancy.txt
-
+# Local editor and operating-system files
+.idea/
+.vscode/
 .DS_Store
 Thumbs.db
 
-node_modules/
-dist/
+# Generated artifacts and machine-specific Docker calibration
+outputs/
+*.log
+/deployment/*.local.json
+
+# Local environment configuration
 .env
 .env.*
 !.env.example
-!.env.sample
