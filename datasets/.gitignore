@@ -1,0 +1,10 @@
+# Downloaded signals, intermediate arrays, processed samples, and source documents.
+# Track manifests, documentation, scenario descriptions and empty directory markers.
+**/raw/*
+!**/raw/.gitkeep
+**/interim/*
+!**/interim/.gitkeep
+**/processed/*
+!**/processed/.gitkeep
+**/references/*
+!**/references/.gitkeep

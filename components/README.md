@@ -1,8 +1,11 @@
 # Waveform components
 
 This package owns the component library and the existing OPS/OCS contracts.
+The library now has 49 definitions and 30 runnable CPU/reference behavior models.
+See [RF behavioral models](RF_BEHAVIORAL_MODELS.md) for C38–C49, ADC/DAC,
+LNA noise, tuning constraints and the deferred multi-channel scope.
 The original C01-C32 definitions remain in `data/`, with C33-C34 added for IQ
-front-end simulation. There are 15 CPU reference implementations, including
+front-end simulation. The original 15 CPU reference implementations include
 the newly runnable C04 digital AGC. See [RF front-end simulation](RF_FRONTEND_SIMULATION.md)
 for research sources, behavior, and hardware boundaries.
 

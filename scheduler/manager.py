@@ -7,7 +7,7 @@ from threading import RLock
 from matching.matcher import StaticMatchResult
 from resources.hardware import HardwareProfile
 from resources.planner import ResourcePlan, ResourcePlanner, ResourceUsage
-from resources.measurements import PhysicalUsage
+from resources.measurements import PhysicalUsage, FPGA_FIELDS
 from resources.placement import PlacementPlan, PlacementPlanner, PlacementState
 from task_repr.models.task import TaskRepresentation
 
@@ -61,6 +61,7 @@ class PlacementInstanceRecord:
     memory_bytes: float
     state: str
     task_id: str | None
+    resident_demand: PhysicalUsage | None = None
 
     def to_dict(self) -> dict:
         return asdict(self)
@@ -109,8 +110,10 @@ class TaskScheduler:
         for instance in self.placement_instances.values():
             if instance.state == "WARM":
                 previous = node_used[instance.processing_node_id]
-                node_used[instance.processing_node_id] = PhysicalUsage(
-                    **{**asdict(previous), "memory_bytes": previous.memory_bytes + instance.memory_bytes})
+                resident = instance.resident_demand or PhysicalUsage(memory_bytes=instance.memory_bytes)
+                node_used[instance.processing_node_id] = PhysicalUsage(**{
+                    key: getattr(previous, key) + getattr(resident, key)
+                    for key in PhysicalUsage.__dataclass_fields__})
         return PlacementState(node_used, link_used)
 
     @synchronized
@@ -146,7 +149,11 @@ class TaskScheduler:
                 allocation.container_unit_id, allocation.cid,
                 allocation.implementation_id, allocation.processor,
                 allocation.processing_node_id,
-                allocation.demand.memory_bytes, "ACTIVE", task.task_id)
+                allocation.demand.memory_bytes, "ACTIVE", task.task_id,
+                resident_demand=PhysicalUsage(
+                    memory_bytes=allocation.demand.memory_bytes,
+                    dsp_local_memory_bytes=allocation.demand.dsp_local_memory_bytes,
+                    **{key: getattr(allocation.demand, key) for key in FPGA_FIELDS}))
         self.placement_active[task.task_id] = plan
         return plan
 
@@ -159,6 +166,59 @@ class TaskScheduler:
             instance = self.placement_instances[allocation.container_unit_id]
             instance.state = "WARM" if keep_warm else "RELEASED"
             instance.task_id = None
+
+    @synchronized
+    def reserve_pool_plan(self, plan: PlacementPlan, reused: set[str]) -> None:
+        """Commit a pool plan under the same lock used for planning and lease selection."""
+        if plan.task_id in self.active or plan.task_id in self.placement_active:
+            raise SchedulingError(f"task {plan.task_id} is already active")
+        if plan.status != "FEASIBLE_ESTIMATE":
+            raise SchedulingError("; ".join(plan.issues) or plan.status)
+        state = self._placement_state()
+        credits = {host: PhysicalUsage() for host in state.node_used}
+        for identifier in reused:
+            record = self.placement_instances.get(identifier)
+            if record is None or record.state != "WARM":
+                raise SchedulingError("Warm instance is no longer available")
+            host = record.processing_node_id
+            resident = record.resident_demand
+            credits[host] = PhysicalUsage(**{key: getattr(credits[host], key) + getattr(resident, key)
+                                            for key in PhysicalUsage.__dataclass_fields__})
+        identifiers = {a.container_unit_id for a in plan.allocations}
+        if len(identifiers) != len(plan.allocations) or not reused <= identifiers:
+            raise SchedulingError("pool plan has invalid instance bindings")
+        for a in plan.allocations:
+            previous = self.placement_instances.get(a.container_unit_id)
+            if previous is not None and previous.state != "RELEASED" and a.container_unit_id not in reused:
+                raise SchedulingError("pool instance is already reserved")
+        for host, capacity in self.placement_planner.nodes.items():
+            for key in PhysicalUsage.__dataclass_fields__:
+                value = (getattr(state.node_used[host], key) - getattr(credits[host], key)
+                         + getattr(plan.node_demand[host], key))
+                if value < 0 or value > getattr(capacity.hardware.capacity, key):
+                    raise SchedulingError(f"{host}: pool reservation exceeds capacity")
+        for link, demand in plan.link_demand.items():
+            if state.link_used[link] + demand > self.placement_planner.links[link].capacity_bytes_per_s:
+                raise SchedulingError("pool link reservation exceeds capacity")
+        for a in plan.allocations:
+            self.placement_instances[a.container_unit_id] = PlacementInstanceRecord(
+                a.container_unit_id, a.cid, a.implementation_id, a.processor, a.processing_node_id,
+                a.demand.memory_bytes, "ACTIVE", plan.task_id,
+                PhysicalUsage(memory_bytes=a.demand.memory_bytes,
+                              dsp_local_memory_bytes=a.demand.dsp_local_memory_bytes,
+                              **{key: getattr(a.demand, key) for key in FPGA_FIELDS}))
+        self.placement_active[plan.task_id] = plan
+
+    @synchronized
+    def finish_pool_plan(self, task_id: str, warm_ids: set[str]) -> None:
+        plan = self.placement_active[task_id]
+        if not warm_ids <= {a.container_unit_id for a in plan.allocations}:
+            raise SchedulingError("unknown Warm instance")
+        for a in plan.allocations:
+            record = self.placement_instances[a.container_unit_id]
+            record.state = "WARM" if a.container_unit_id in warm_ids else "RELEASED"
+            record.task_id = None
+        del self.placement_active[task_id]
 
     @synchronized
     def evict_placement_warm(self, container_unit_id: str) -> None:

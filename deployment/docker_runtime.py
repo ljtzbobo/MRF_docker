@@ -71,13 +71,14 @@ class DockerRuntime:
         if (allocation.processing_node_id != self.processing_node_id or
                 node["cid"] != allocation.cid or allocation.processor != "cpu"):
             raise DockerRuntimeError("allocation and component graph disagree")
-        image = self.images[allocation.cid]
+        image = allocation.runtime_identity if allocation.lease_id else self.images[allocation.cid]
         name = f"mrf-{uuid4().hex[:20]}"
         configuration = {"id": node["id"], "cid": node["cid"],
                          "parameters": node["parameters"], "inputs": node["inputs"],
                          "outputs": node["outputs"]}
         args = ["run", "--detach", "--name", name,
                 "--label", f"mrf.task_id={allocation.container_unit_id.split(':', 1)[0]}",
+                "--label", f"mrf.instance_id={allocation.container_unit_id}",
                 "--publish", "127.0.0.1::8765"]
         if allocation.demand.cpu_millicores > 0:
             args.extend(["--cpus", str(allocation.demand.cpu_millicores / 1000)])
@@ -109,11 +110,17 @@ class DockerRuntime:
                 f"container {allocation.container_unit_id} did not become ready: {logs}")
         except Exception as start_error:
             try:
+                diagnostic = self._docker('logs', '--tail', '30', container_id)
+            except DockerRuntimeError:
+                diagnostic = ''
+            try:
                 self.stop(handle)
             except DockerRuntimeError as cleanup_error:
                 raise DockerCleanupError(
                     f"container {handle.container_id} failed to start and could not be removed: "
                     f"{cleanup_error}") from start_error
+            if diagnostic:
+                raise DockerRuntimeError(f'{start_error}; worker logs: {diagnostic}') from start_error
             raise
 
     def process(self, handle: ContainerHandle, packets: dict):
@@ -142,6 +149,61 @@ class DockerRuntime:
                 raise
         with self._handles_lock:
             self._handles.pop(handle.unit_id, None)
+
+    def pool_identity(self, cid):
+        return self._docker("image", "inspect", self.images[cid], "--format", "{{.Id}}")
+
+    def wait_ready(self,handle,cid):
+        deadline=time.monotonic()+self.ready_timeout_s
+        while time.monotonic()<deadline:
+            try:
+                with urlopen(handle.endpoint+'/health',timeout=.5) as response:
+                    if json.load(response).get('cid')==cid:return
+            except (OSError,ValueError,URLError):time.sleep(.05)
+        raise DockerRuntimeError('restored worker did not become ready')
+
+    def reconcile_handle(self,allocation):
+        identifiers=self._docker('ps','--all','--no-trunc','--filter',
+            'label=mrf.instance_id='+allocation.container_unit_id,'--format','{{.ID}}').splitlines()
+        if not identifiers:return None,False
+        if len(identifiers)!=1:raise DockerRuntimeError('multiple containers claim the same instance identity')
+        actual=json.loads(self._docker('inspect',identifiers[0]))[0]
+        if (actual['Config'].get('Labels',{}).get('mrf.instance_id')!=allocation.container_unit_id or
+                actual['Image']!=allocation.runtime_identity):
+            raise DockerRuntimeError('container ownership or image differs from journal')
+        self.verify_limits(actual,allocation)
+        running=bool(actual['State']['Running'])
+        endpoint=''
+        if running:
+            port=self._docker('port',identifiers[0],'8765/tcp').splitlines()[0].rsplit(':',1)[-1]
+            endpoint='http://127.0.0.1:'+str(int(port))
+        handle=ContainerHandle(identifiers[0],endpoint,allocation.container_unit_id)
+        with self._handles_lock:self._handles[handle.unit_id]=handle
+        return handle,running
+
+    @staticmethod
+    def verify_limits(actual,allocation):
+        limits=actual['HostConfig']
+        if (limits.get('NanoCpus',0)!=int(allocation.demand.cpu_millicores*1_000_000) or
+                limits.get('Memory',0)!=int(allocation.demand.memory_bytes)):
+            raise DockerRuntimeError('actual Docker CPU/memory limits differ from reserved allocation')
+
+    def health(self, handle):
+        with urlopen(handle.endpoint + "/health", timeout=2) as response:
+            state = json.load(response)
+        if state.get("status") != "ready" or state.get("pool_protocol") != 1:
+            raise DockerRuntimeError("worker does not support safe pool reset; rebuild its image")
+
+    def reset(self, handle, allocation, node):
+        configuration = {key: node[key] for key in ("id", "cid", "parameters", "inputs", "outputs")}
+        body = json.dumps({"node": configuration}).encode("utf-8")
+        request = Request(handle.endpoint + "/reset", body, {"Content-Type": "application/json"}, method="POST")
+        try:
+            with urlopen(request, timeout=10) as response:
+                if json.load(response).get("status") != "ready":
+                    raise DockerRuntimeError("worker reset did not confirm readiness")
+        except (OSError, ValueError, URLError) as exc:
+            raise DockerRuntimeError(f"worker reset failed: {exc}") from exc
 
     def snapshot(self) -> dict[str, dict]:
         """按运行单元读取 Docker 实时统计，单个容器失败不影响资源快照。"""

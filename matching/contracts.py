@@ -65,6 +65,10 @@ def validate_connection(task, edge, source, target, left, right,
             left_rate /= left_binding.parameters["decimation"]
         if left_binding.cid == "C03":
             left_rate *= left_binding.parameters.get("interpolation", 1)
+        if left_binding.cid == 'C46':
+            left_rate /= left_binding.parameters.get('decimation', 1)
+        if left_binding.cid == 'C47':
+            left_rate *= left_binding.parameters.get('interpolation', 1)
         if not math.isclose(left_rate, right_rate, rel_tol=1e-9):
             return f"sample rate {left_rate} MHz does not equal {right_rate} MHz"
     return None
@@ -106,6 +110,8 @@ def validate_signal_packet(task, node, packet: DataPacket, direction: str,
             expected /= binding.parameters["decimation"]
         if binding.cid == "C03":
             expected *= binding.parameters.get("interpolation", 1)
+        if binding.cid == 'C46': expected /= binding.parameters.get('decimation', 1)
+        if binding.cid == 'C47': expected *= binding.parameters.get('interpolation', 1)
     if not math.isclose(packet.sample_rate, expected, rel_tol=1e-9):
         return f"{direction} sample rate must be {expected} samples/s, got {packet.sample_rate}"
     return None

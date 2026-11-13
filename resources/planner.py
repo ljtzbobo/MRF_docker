@@ -9,10 +9,11 @@ from matching.matcher import StaticMatchResult
 from task_repr.models.task import TaskRepresentation
 from task_repr.template.refinement import SpecificationTask
 
+from .constraints import task_time_limit as _time_limit
 from .estimator import ResourceEstimator
 from .hardware import HardwareProfile
 from .models import ResourceProfile
-from .measurements import (ComponentMeasurement, MeasurementCatalog,
+from .measurements import (ComponentMeasurement, MeasurementCatalog, execution_profile_basis,
                            PhysicalHardwareProfile, PhysicalResourceState,
                            PhysicalUsage)
 
@@ -80,10 +81,12 @@ class PhysicalAllocation:
                 "processor": self.measurement.processor,
                 "demand": asdict(self.measurement.demand),
                 "runtime_p95_ms": self.measurement.runtime_p95_ms,
-                "setup_p95_ms": self.measurement.setup_p95_ms,
+                "setup_p95_ms": self.measurement.effective_setup_ms,
+                "tuning_setup_ms": self.measurement.tuning_setup_ms,
                 "input_bytes": self.measurement.input_bytes,
                 "output_bytes": self.measurement.output_bytes,
                 "sample_count": self.measurement.sample_count,
+                "timing_scope": self.measurement.timing_scope,
                 "source": self.measurement.source}
 
 
@@ -102,10 +105,15 @@ class PhysicalResourcePlan:
     def to_dict(self) -> dict:
         return {"task_id": self.task_id, "status": self.status,
                 "unit_system": "physical",
+                "profile_basis": execution_profile_basis(a.measurement for a in self.allocations),
                 "hardware_id": self.hardware_id,
                 "units": {"cpu_millicores": "millicores", "memory_bytes": "bytes",
                           "bandwidth_bytes_per_s": "bytes/s", "dsp_units": "units",
                           "fpga_units": "units", "runtime_p95_ms": "ms",
+                          "dsp_compute_mcycles_per_s": "million cycles/s",
+                          "dsp_local_memory_bytes": "bytes",
+                          "fpga_lut": "LUT", "fpga_ff": "FF",
+                          "fpga_dsp48": "DSP48E1", "fpga_bram36": "36Kb blocks",
                           "setup_p95_ms": "ms", "input_bytes": "bytes",
                           "output_bytes": "bytes"},
                 "allocations": [item.to_dict() for item in self.allocations],
@@ -115,30 +123,17 @@ class PhysicalResourcePlan:
                 "time_limit_ms": self.time_limit_ms, "issues": list(self.issues)}
 
 
-def _time_limit(task: TaskRepresentation | SpecificationTask) -> float | None:
-    if isinstance(task, SpecificationTask):
-        remaining = task.X.get("remaining_deadline_ms")
-        deadline = task.Q.get("deadline_ms")
-        observed = task.X.get("observed_at_ms")
-        limits = [remaining] if remaining is not None else []
-        if deadline is not None and observed is not None:
-            limits.append(deadline - observed)
-    else:
-        limits = [task.X.remaining_deadline_ms, task.Q.max_latency_ms,
-                  task.Q.max_response_ms]
-    for value in limits:
-        if value is not None and (type(value) not in (int, float) or not math.isfinite(value)):
-            raise ValueError("task time limit must be finite")
-    return min((value for value in limits if value is not None), default=None)
-
-
 def _physical_demand(items: tuple[ComponentMeasurement, ...]) -> PhysicalUsage:
     return PhysicalUsage(
         cpu_millicores=max((item.demand.cpu_millicores for item in items), default=0),
         memory_bytes=sum(item.demand.memory_bytes for item in items),
         bandwidth_bytes_per_s=max((item.demand.bandwidth_bytes_per_s for item in items), default=0),
         dsp_units=max((item.demand.dsp_units for item in items), default=0),
-        fpga_units=max((item.demand.fpga_units for item in items), default=0))
+        fpga_units=max((item.demand.fpga_units for item in items), default=0),
+        dsp_compute_mcycles_per_s=max((item.demand.dsp_compute_mcycles_per_s for item in items), default=0),
+        dsp_local_memory_bytes=sum(item.demand.dsp_local_memory_bytes for item in items),
+        **{key: sum(getattr(item.demand, key) for item in items)
+           for key in ("fpga_lut", "fpga_ff", "fpga_dsp48", "fpga_bram36")})
 
 
 class ResourcePlanner:
@@ -184,7 +179,7 @@ class ResourcePlanner:
         best_feasible = None
         for items in combinations:
             demand = _physical_demand(items)
-            duration = sum(item.runtime_p95_ms + item.setup_p95_ms for item in items)
+            duration = sum(item.runtime_p95_ms + item.effective_setup_ms for item in items)
             candidate = (duration, items, demand)
             if best is None or duration < best[0]:
                 best = candidate
@@ -203,7 +198,9 @@ class ResourcePlanner:
         if limit is None:
             issues.append("task has no explicit completion deadline")
         status = "INFEASIBLE" if capacity_issues or (limit is not None and (limit <= 0 or duration > limit)) else (
-            "UNVERIFIED_TIME" if limit is None else "FEASIBLE_MEASURED_ESTIMATE")
+            "UNVERIFIED_TIME" if limit is None else
+            "FEASIBLE_SIMULATION_ESTIMATE" if execution_profile_basis(items) in ("synthetic", "mixed") else
+            "FEASIBLE_MEASURED_ESTIMATE")
         allocations = tuple(PhysicalAllocation(node.node_id, item)
                             for node, item in zip(task.G.nodes, items))
         return PhysicalResourcePlan(task.task_id, status, hardware.hardware_id,

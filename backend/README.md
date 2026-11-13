@@ -1,5 +1,11 @@
 # 后端接口
 
+模块四增加执行字段 `keep_warm`、池查询与维护接口，见 [模块四开发与验收](../docs/module4_implementation.md)。
+
+第二阶段中，`keep_warm=true` 同时启用 Active 整批排队策略。必须使用不同 task_id 并发提交。进度 stage 可为 `waiting_for_instance` 或 `queue_fallback`，waiting_ms 来自服务端实际经过时间；plan.dispatch 提供候选动作、实际等待和准备/清理成本。排队时未新增硬件预留，正式交接后才取得新租约。Restore 尚未实现。
+
+执行进度接口：`POST /api/v1/executions` 提交 `{task, frames}` 并返回 202 与 job_id；`GET /api/v1/executions/{job_id}` 查询真实事件与分配方案；完成后 `GET /api/v1/executions/{job_id}/result` 获取结果。现有同步接口仍可使用。任务记录仅保存在当前后端进程内，最多保留 32 项，事件保留最近 256 条，服务重启后清空，不提供取消或跨进程恢复。
+
 `api/` 提供 HTTP 接口，`services/` 组织任务与资源用例，`repositories/` 读取 JSON 文件。任务表征、组件匹配、资源规划和调度分别由对应模块实现。设置 `MRF_DEPLOYMENT_CONFIG` 后，`POST /api/v1/deployments/execute` 使用新规格 DAG 的物理放置与 Docker 容器执行；配置和接口见 [deployment/README.md](../deployment/README.md)。原有调度仿真接口仍不部署容器。
 
 在项目根目录使用同一个 Python 环境安装依赖并启动服务：
@@ -10,6 +16,8 @@ python -m uvicorn backend.api.app:app --reload
 ```
 
 默认地址为 `http://127.0.0.1:8000`，接口文档位于 `/docs`。`MRF_TASK_DIR` 和 `MRF_RESOURCE_DIR` 可指定其他 JSON 目录；文件名去掉 `.json` 后作为查询名称。
+
+任务 JSON 清单接口不等于真实数据集接口。原有七个业务 JSON 定位为合成接口测试；新下载的信号、标签与来源记录放在 [datasets](../datasets/README.md)，当前尚无自动数据集导入器。
 
 | 方法 | 路径 | 功能 |
 | --- | --- | --- |

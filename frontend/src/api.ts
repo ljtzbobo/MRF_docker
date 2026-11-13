@@ -1,4 +1,4 @@
-import type { DeploymentResult, InputFrame, MatchResult, RecordValue, Representation, ResourceSnapshot } from './types'
+import type { DeploymentResult, ExecutionProgress, InputFrame, MatchResult, RecordValue, Representation, ResourceSnapshot } from './types'
 
 async function request<T>(path: string, body?: unknown): Promise<T> {
   const response = await fetch(`/api/v1${path}`, {
@@ -15,14 +15,22 @@ async function request<T>(path: string, body?: unknown): Promise<T> {
 }
 
 export const api = {
+  startExecution: (task: RecordValue, frames: InputFrame[], keepWarm = false) => request<ExecutionProgress>('/executions', { task, frames, keep_warm: keepWarm }),
+  executionProgress: (id: string) => request<ExecutionProgress>(`/executions/${id}`),
+  executionResult: (id: string) => request<DeploymentResult>(`/executions/${id}/result`),
   represent: (task: RecordValue | RecordValue[]) => request<Representation>('/task-representations/external', task),
   representNormalized: (task: RecordValue) => request<Representation>('/task-representations/normalized', task),
   restoreTemplate: (taskTemplate: RecordValue, taskId: string) =>
     request<Representation>('/task-representations/from-template',
       { task_template: taskTemplate, task_id: taskId }),
   match: (task: RecordValue) => request<MatchResult>('/matches', task),
-  plan: (task: RecordValue) => request<RecordValue>('/plans', task),
+  plan: (task: RecordValue, keepWarm = false) => request<RecordValue>(`/plans?keep_warm=${keepWarm}`, task),
   resources: () => request<ResourceSnapshot>('/deployments/resources'),
+  dynamicState: () => request<RecordValue>('/dynamic'),
+  dynamicEvent: (event: RecordValue) => request<RecordValue>('/dynamic/events', event),
+  releasePoolInstance: (id: string) => request<RecordValue>(`/pool/instances/${encodeURIComponent(id)}/release`, {}),
+  checkpointInstance: (id: string) => request<RecordValue>(`/pool/instances/${encodeURIComponent(id)}/checkpoint`, {}),
+  removeCheckpoint: (id: string) => request<RecordValue>(`/pool/checkpoints/${encodeURIComponent(id)}/remove`, {}),
   execute: (task: RecordValue, frames: InputFrame[]) =>
     request<DeploymentResult>('/deployments/execute', { task, frames }),
 }

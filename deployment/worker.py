@@ -34,10 +34,11 @@ def make_handler(component, node: SpecificationNode):
             self.wfile.write(body)
 
         def do_GET(self):
-            self._reply(200, {"status": "ready", "cid": component.cid}) if self.path == "/health" else self._reply(404, {"error": "not found"})
+            self._reply(200, {"status": "ready", "cid": component.cid, "pool_protocol": 1}) if self.path == "/health" else self._reply(404, {"error": "not found"})
 
         def do_POST(self):
-            if self.path != "/process":
+            nonlocal component, node
+            if self.path not in ("/process", "/reset"):
                 self._reply(404, {"error": "not found"})
                 return
             try:
@@ -45,6 +46,23 @@ def make_handler(component, node: SpecificationNode):
                 if not 0 < length <= MAX_REQUEST_BYTES:
                     raise ValueError("request body size is invalid")
                 request = json.loads(self.rfile.read(length))
+                if self.path == "/reset":
+                    if not isinstance(request, dict) or set(request) != {"node"} or not isinstance(request["node"], dict):
+                        raise ValueError("reset requires a node configuration")
+                    raw = request["node"]
+                    if (set(raw) != {"id", "cid", "parameters", "inputs", "outputs"}
+                            or raw["cid"] != component.cid
+                            or raw["inputs"] != node.inputs or raw["outputs"] != node.outputs):
+                        raise ValueError("reset configuration is incompatible")
+                    fresh = create_runtime_component(raw["cid"], **raw["parameters"])
+                    with lock:
+                        if fresh.config != component.config:
+                            raise ValueError("reset must preserve effective component parameters")
+                        component = fresh
+                        node = SpecificationNode(raw["id"], raw["id"], "container_runtime",
+                                                 raw["inputs"], raw["outputs"], {}, raw["id"])
+                    self._reply(200, {"status": "ready"})
+                    return
                 if not isinstance(request, dict) or set(request) != {"inputs"} or not isinstance(request["inputs"], dict):
                     raise ValueError("request requires named input ports")
                 if set(request["inputs"]) != set(node.inputs):

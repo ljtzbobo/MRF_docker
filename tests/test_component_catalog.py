@@ -14,9 +14,9 @@ CATALOG_PATH = Path(__file__).resolve().parents[1] / "components" / "data" / "co
 class ComponentCatalogTests(unittest.TestCase):
     def test_builtin_catalog_contains_extended_runtime_components(self):
         catalog = default_component_catalog()
-        self.assertEqual(len(catalog), 37)
+        self.assertEqual(len(catalog), 49)
         self.assertEqual([item.cid for item in catalog.components],
-                         [f"C{index:02d}" for index in range(1, 38)])
+                         [f"C{index:02d}" for index in range(1, 50)])
 
     def test_component_keeps_function_and_scheduler_calibration(self):
         component = default_component_catalog().get("C08")

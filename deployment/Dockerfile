@@ -9,7 +9,7 @@ COPY scheduler /app/scheduler
 COPY task_executor /app/task_executor
 COPY shared /app/shared
 COPY deployment /app/deployment
-RUN pip install --no-cache-dir 'numpy>=1.23,<3'
+RUN pip install --no-cache-dir 'numpy>=1.23,<3' 'jsonschema>=4.20,<5'
 
 EXPOSE 8765
 CMD ["python", "-m", "deployment.worker"]

@@ -1,5 +1,7 @@
 # 射频前端软件仿真范围
 
+新增细分模型 C38–C49 见 [射频前端行为模型](RF_BEHAVIORAL_MODELS.md)。当前优先完成基础 ADC/DAC、频率/带宽约束、LNA 噪声与 LO 调谐成本，多射频通道暂缓。下文范围描述主要针对原有 C04/C33/C34。
+
 ## 调研结论
 
 软件可以在**已采样复数 IQ** 上模拟前端对信号造成的可观测影响：固定增益、数字 AGC、复数频移、有限带宽、加性噪声和幅度限幅。GNU Radio 的 [复数 AGC 核心](https://github.com/gnuradio/gnuradio/blob/main/gr-analog/include/gnuradio/analog/agc.h)采用目标幅度与当前输出幅度的误差更新增益；[频移 FIR 滤波器](https://github.com/gnuradio/gnuradio/blob/main/gr-filter/lib/freq_xlating_fir_filter_impl.h)组合数字旋转器和 FIR。它们证明这些**样本域**操作可软件实现。

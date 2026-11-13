@@ -1,5 +1,9 @@
 # 资源规划
 
+当前正式软件参考模型见 [66AK2H06 / XC7K410T](../docs/reference_hardware_model.md)：四个独立 C66x 核心、四个 FPGA 逻辑区域，每区域按 LUT、FF、DSP48、BRAM36 四项约束分配。兼容旧版五维 JSON，但正式模型不再用 fpga_units 计量 FPGA 容量。
+
+新增 [DSP / FPGA 软件资源仿真](../docs/software_resource_simulation.md)：无需物理设备，用显式合成画像、虚拟节点和链路复用多节点放置器，并通过 CPU 参考组件执行信号链。文档也说明旧版归一化、单设备物理诊断与多节点分配入口的区别。
+
 `ResourcePlanner.plan(task, match, capacity, used)` 接收已完整静态匹配的旧版 `TaskRepresentation` 或业务细化后的 `SpecificationTask`，以及同一任务的 `MATCHED` 组件绑定。`capacity` 是 `HardwareProfile`，`used` 是当前已占用的 `ResourceUsage`；规划只读取资源状态，不预留或启动实例。
 
 规划器按绑定的 CID 和参数调用 `ResourceEstimator`，生成各节点资源画像。当前 DAG 执行器在 CPU 上串行运行，因此 CPU 和带宽按最大单节点压力、内存按所有组件实例之和估算。数值仍采用 0–100 归一化仿真等级；DSP/FPGA 画像只供参考，尚不代表实际设备分配。只有 C08 有参数化工作量模型，未标定的组件运行时间保持 `null`。

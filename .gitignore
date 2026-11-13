@@ -23,6 +23,7 @@ Thumbs.db
 outputs/
 *.log
 /deployment/*.local.json
+/deployment/checkpoint-wheels/
 
 # Local environment configuration
 .env

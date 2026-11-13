@@ -209,8 +209,13 @@ def adapt_parameters(task, node, cid: str) -> dict:
         _require(p, "delay_samples")
 
     # 通过组件构造签名拒绝未消费的任务参数，避免配置被静默忽略。
+    if cid == 'C50':
+        for key in ('gains_db','phases_deg'):
+            if key in p:
+                p[key] = _array(p[key], key)
     signature = inspect.signature(RUNTIME_COMPONENT_REGISTRY[cid])
-    unknown = set(p) - set(signature.parameters)
+    accepted = getattr(RUNTIME_COMPONENT_REGISTRY[cid], 'parameter_defaults', signature.parameters)
+    unknown = set(p) - set(accepted)
     if unknown:
         raise MatchRuleError("INVALID_PARAMETERS", f"unsupported {cid} parameters: {sorted(unknown)}")
     return p

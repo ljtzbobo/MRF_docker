@@ -86,7 +86,9 @@ def search_chain_dp(problem, max_assignments):
                     continue
                 resources = tuple(getattr(demands[host], field) for host in problem.nodes
                                   for field in demands[host].__dataclass_fields__) + tuple(links.values())
-                candidate = Label(assignment, cost, resources, (option[0], option[1].output_bytes))
+                # Different consumed Warm instances have different future reuse opportunities.
+                reused = tuple(sorted(item.instance_id for item in problem.reused_instances(assignment).values()))
+                candidate = Label(assignment, cost, resources, (option[0], option[1].output_bytes, reused))
                 if index == len(order) - 1 and cost < best_cost:
                     best, best_cost = assignment, cost
                 if candidate.boundary not in frontiers:

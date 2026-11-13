@@ -5,10 +5,11 @@ import { useRoute, useRouter } from 'vue-router'
 import { Activity, ArrowRight, Box, CheckCircle2, ChevronDown, CircleAlert, Cpu, FileJson2, Layers3, Network, Play, Upload } from 'lucide-vue-next'
 import GraphPanel from './components/GraphPanel.vue'
 import DetailValue from './components/DetailValue.vue'
+import ExecutionPanel from './components/ExecutionPanel.vue'
 import { api } from './api'
 import { spectrumSample } from './sample'
 import { useWorkbench } from './stores/workbench'
-import type { GraphLevel, InputFrame, RecordValue, Representation } from './types'
+import type { ExecutionProgress, GraphLevel, InputFrame, RecordValue, Representation } from './types'
 
 const store = useWorkbench()
 const route = useRoute()
@@ -75,6 +76,12 @@ function formatValue(value: unknown): string {
   if (typeof value === 'string') return value
   if (typeof value === 'number' || typeof value === 'boolean') return String(value)
   return JSON.stringify(value)
+}
+
+function parallelActions(job: ExecutionProgress) {
+  const labels: Record<string,string> = { active_reuse:'Active 复用', warm_reuse:'Warm 复用', cold_start:'冷启动' }
+  const allocations = (job.plan?.allocations ?? []) as RecordValue[]
+  return [...new Set(allocations.map(a => labels[String(a.acquisition)] || String(a.acquisition)))].join(' / ') || '等待规划'
 }
 
 async function loadFile(file?: File) {
@@ -225,6 +232,20 @@ async function loadReceiveSample() {
   }
 }
 
+async function loadSpectrumExecutionSample() {
+  frameError.value = ''
+  taskOptions.value = []
+  templateOptions.value = []
+  try {
+    const [taskResponse, framesResponse] = await Promise.all([
+      fetch('/samples/spectrum-execution-task.json'), fetch('/samples/spectrum-execution-frames.json'),
+    ])
+    if (!taskResponse.ok || !framesResponse.ok) throw new Error('频谱执行样例读取失败')
+    await store.analyze(await taskResponse.json() as RecordValue, '合成频谱执行样例')
+    if (store.match?.status === 'MATCHED') store.setFrames(validateFrames(await framesResponse.json()), '合成频谱 IQ 帧')
+  } catch (error) { frameError.value = error instanceof Error ? error.message : '样例读取失败' }
+}
+
 onMounted(() => store.analyze(spectrumSample, '频谱分析样例'))
 </script>
 
@@ -258,17 +279,22 @@ onMounted(() => store.analyze(spectrumSample, '频谱分析样例'))
         <div class="task-meta"><div><span>任务 ID</span><strong class="mono">{{ store.taskId }}</strong></div><div><span>任务类型</span><strong>{{ taskType }}</strong></div><div><span>方向</span><strong>{{ taskDirection }}</strong></div><div><span>分配预览</span><strong :class="{ 'positive': store.plan?.status === 'FEASIBLE_ESTIMATE' }">{{ store.plan?.status ?? '—' }}</strong></div></div>
 
         <section class="execution-band" aria-label="容器执行">
-          <div class="execution-heading"><div><h2>容器执行</h2><span>{{ executionHint }}</span></div><div class="execution-actions"><button class="secondary-button" :disabled="store.busy || store.executing" @click="loadReceiveSample">载入接收链样例</button><button class="secondary-button" :disabled="store.match?.status !== 'MATCHED' || store.executing" @click="frameInput?.click()"><Upload :size="15" />上传输入帧</button><button class="primary-button" :disabled="!store.canExecute" @click="store.execute()"><Play :size="15" />{{ store.executing ? '执行中…' : '提交执行' }}</button></div></div>
+          <div class="execution-heading"><div><h2>容器执行</h2><span>{{ executionHint }}</span></div><div class="execution-actions"><button class="secondary-button" :disabled="store.busy || store.executing" @click="loadSpectrumExecutionSample">载入 DSP/FPGA 执行样例</button><button class="secondary-button" :disabled="store.busy || store.executing" @click="loadReceiveSample">载入接收链样例</button><button class="secondary-button" :disabled="store.match?.status !== 'MATCHED' || store.executing" @click="frameInput?.click()"><Upload :size="15" />上传输入帧</button><button class="primary-button" :disabled="!store.canExecute" @click="store.execute()"><Play :size="15" />{{ store.executing ? '执行中…' : '提交执行' }}</button></div></div>
           <input ref="frameInput" class="sr-only" type="file" accept=".json,application/json" aria-label="输入帧 JSON" @change="loadFrames(($event.target as HTMLInputElement).files?.[0])" />
+            <label class="execution-file"><input v-model="store.keepWarm" type="checkbox" :disabled="store.executing || store.busy" @change="store.refreshPlan()" />完成后保留 Warm 实例，供后续任务复用</label>
+            <div class="execution-file"><button class="secondary-button" :disabled="!store.canExecute || !store.keepWarm" @click="store.executePair()">并发提交两次</button><span>以两个不同任务 ID 执行同一输入，观察实际复用动作；短任务可能直接命中 Warm。</span></div>
           <div v-if="store.frameFileName" class="execution-file"><FileJson2 :size="15" /><span>{{ store.frameFileName }}</span><span>{{ store.frames.length }} 帧</span></div>
           <div v-if="frameError || store.executionError" class="notice notice--error"><CircleAlert :size="16" />{{ frameError || store.executionError }}</div>
           <div v-if="store.deployment" class="execution-result"><CheckCircle2 :size="17" /><strong>{{ store.deployment.status }}</strong><span>{{ store.deployment.frame_outputs.length }} 帧完成</span><span>任务 {{ store.deployment.task_id }}</span></div>
         </section>
 
+        <section v-if="store.parallelProgress.length" class="execution-band" aria-label="并发执行对比"><h2>并发执行对比</h2><p class="execution-file">下方链路与详细进度显示最后提交的任务。</p><div class="table-scroll"><table><thead><tr><th>任务</th><th>状态</th><th>完成帧</th><th>组件调用</th><th>实例取得方式</th></tr></thead><tbody><tr v-for="job in store.parallelProgress" :key="job.job_id"><td>{{ job.task_id }}</td><td>{{ job.state }}{{ job.stage === 'waiting_for_instance' ? ' · 等待实例' : '' }}</td><td>{{ job.completed_frames }} / {{ job.total_frames }}</td><td>{{ job.completed_calls }} / {{ job.total_calls }}</td><td>{{ parallelActions(job) }}</td></tr></tbody></table></div></section>
+        <ExecutionPanel :plan="store.plan" :progress="store.executionProgress" :input-frames="store.frames.length" />
+
         <section class="analysis-section">
           <div class="analysis-heading"><div><h2>功能链路</h2><span>{{ graphCount }}</span></div><div class="segmented" role="tablist" aria-label="图层"><button v-for="stage in stages" :key="stage.id" role="tab" :aria-selected="store.level === stage.id" :class="{ active: store.level === stage.id }" @click="store.setLevel(stage.id)">{{ stage.label }}</button></div></div>
           <div class="analysis-layout">
-            <div class="graph-column"><div class="graph-topline"><div class="stage-trail"><template v-for="(stage, index) in stages" :key="stage.id"><span :class="{ current: store.level === stage.id }">{{ stage.number }} {{ stage.label }}</span><ArrowRight v-if="index < stages.length - 1" :size="13" /></template></div><span class="muted">{{ store.match?.refined_graph?.profile_id ?? '业务请求' }}</span></div><GraphPanel :graph="graph" :level="store.level" :selected-id="store.selectedNodeId" @select="store.selectedNodeId = $event" /></div>
+            <div class="graph-column"><div class="graph-topline"><div class="stage-trail"><template v-for="(stage, index) in stages" :key="stage.id"><span :class="{ current: store.level === stage.id }">{{ stage.number }} {{ stage.label }}</span><ArrowRight v-if="index < stages.length - 1" :size="13" /></template></div><span class="muted">{{ store.match?.refined_graph?.profile_id ?? '业务请求' }}</span></div><GraphPanel :graph="graph" :level="store.level" :selected-id="store.selectedNodeId" :plan="store.plan" :progress="store.executionProgress" @select="store.selectedNodeId = $event" /></div>
             <aside class="inspector"><div class="inspector-title"><Layers3 :size="17" /><h3>{{ selectedNode ? '节点详情' : '图层详情' }}</h3></div>
               <template v-if="selectedNode"><div class="inspector-id mono">{{ selectedNode.id }}</div><div class="detail-row"><span>功能</span><strong>{{ selectedNode.capability ?? selectedNode.role ?? '—' }}</strong></div><div v-if="selectedNode.cid" class="detail-row"><span>组件 CID</span><strong class="mono">{{ selectedNode.cid }}</strong></div><div v-if="selectedNode.business_node_id" class="detail-row"><span>业务节点</span><strong class="mono">{{ selectedNode.business_node_id }}</strong></div><div v-if="selectedNode.inputs" class="detail-block"><span>输入端口</span><div v-for="(format, port) in selectedNode.inputs" :key="port" class="port-row"><b>{{ port }}</b><code>{{ format }}</code></div></div><div v-if="selectedNode.outputs" class="detail-block"><span>输出端口</span><div v-for="(format, port) in selectedNode.outputs" :key="port" class="port-row"><b>{{ port }}</b><code>{{ format }}</code></div></div><div v-if="selectedNode.parameters && Object.keys(selectedNode.parameters).length" class="detail-block"><span>参数</span><div v-for="(value, key) in selectedNode.parameters" :key="key" class="parameter-row"><b>{{ key }}</b><span :title="formatValue(value)">{{ formatValue(value) }}</span></div></div></template>
               <template v-else><div class="inspector-placeholder"><Box :size="25" :stroke-width="1.4" /><span>选择图中的节点查看契约与参数</span></div><div class="detail-row"><span>节点数量</span><strong>{{ graph?.nodes.length ?? 0 }}</strong></div><div class="detail-row"><span>连接数量</span><strong>{{ graph?.edges.length ?? 0 }}</strong></div><div v-if="store.match?.refined_graph?.uncovered_outputs?.length" class="detail-block"><span>未覆盖输出</span><p v-for="output in store.match.refined_graph.uncovered_outputs" :key="output">{{ output }}</p></div><div v-if="store.level === 'business'" class="representation-parts"><details v-for="part in representationParts" :key="part.key"><summary>{{ part.label }}<ChevronDown :size="14" /></summary><DetailValue :value="part.data" :resource="part.key === 'R'" /><div v-if="part.key === 'R' && store.plan?.unit_system === 'physical' && store.plan.node_demand" class="physical-preview"><h4>处理节点预留</h4><DetailValue :value="store.plan.node_demand" resource /></div></details></div></template>

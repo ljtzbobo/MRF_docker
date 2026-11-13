@@ -223,6 +223,11 @@ def _signal_checks(task, node, candidate):
             raise MatchRuleError("INTERFACE_MISMATCH", f"DDC output length must be {expected}")
     if cid == "C05" and input_length is not None and output_length is not None and input_length != output_length:
         raise MatchRuleError("INTERFACE_MISMATCH", "digital filter preserves block length")
+    if cid in ('C46','C47') and input_length is not None and output_length is not None:
+        expected = ((input_length+config.get('decimation',1)-1)//config.get('decimation',1)
+                    if cid=='C46' else input_length*config.get('interpolation',1))
+        if output_length != expected:
+            raise MatchRuleError('INTERFACE_MISMATCH', f'converter output length must be {expected}')
     if cid == "C21" and rate_mhz is not None:
         bandwidth_mhz = p.get("pulse_bandwidth_mhz")
         if bandwidth_mhz is not None and bandwidth_mhz > rate_mhz:

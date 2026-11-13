@@ -181,8 +181,8 @@ def load_component_catalog(path: str | Path | None = None) -> ComponentCatalog:
         raise ValidationError("catalog.components must be a non-empty array")
     components = tuple(_component(item, index) for index, item in enumerate(root["components"]))
     catalog = ComponentCatalog(components, root["schema_version"])
-    if path is None and len(catalog) != 37:
-        raise ValidationError(f"built-in component catalog must contain 37 components, got {len(catalog)}")
+    if path is None and len(catalog) != 49:
+        raise ValidationError(f"built-in component catalog must contain 49 components, got {len(catalog)}")
     return catalog
 
 

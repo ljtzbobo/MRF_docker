@@ -1,0 +1,1172 @@
+{
+  "schema_version": 2,
+  "mode": "software_simulation",
+  "reference_model": "66AK2H06-XC7K410T-v1",
+  "nodes": [
+    {
+      "node_id": "sim-cpu",
+      "hardware_id": "virtual-cpu",
+      "device_id": "host-cpu-0",
+      "processor": "cpu",
+      "unit_index": null,
+      "capacity": {
+        "cpu_millicores": 8000,
+        "memory_bytes": 8589934592,
+        "bandwidth_bytes_per_s": 1000000000,
+        "dsp_units": 0.0,
+        "fpga_units": 0.0,
+        "dsp_compute_mcycles_per_s": 0.0,
+        "dsp_local_memory_bytes": 0.0,
+        "fpga_lut": 0.0,
+        "fpga_ff": 0.0,
+        "fpga_dsp48": 0.0,
+        "fpga_bram36": 0.0
+      },
+      "features": []
+    },
+    {
+      "node_id": "c66x-core-0",
+      "hardware_id": "66AK2H06-core-0",
+      "device_id": "66AK2H06-0",
+      "processor": "dsp",
+      "unit_index": 0,
+      "capacity": {
+        "cpu_millicores": 0.0,
+        "memory_bytes": 0.0,
+        "bandwidth_bytes_per_s": 1000000000,
+        "dsp_units": 0.0,
+        "fpga_units": 0.0,
+        "dsp_compute_mcycles_per_s": 1200,
+        "dsp_local_memory_bytes": 1048576,
+        "fpga_lut": 0.0,
+        "fpga_ff": 0.0,
+        "fpga_dsp48": 0.0,
+        "fpga_bram36": 0.0
+      },
+      "features": [
+        "C66x"
+      ]
+    },
+    {
+      "node_id": "c66x-core-1",
+      "hardware_id": "66AK2H06-core-1",
+      "device_id": "66AK2H06-0",
+      "processor": "dsp",
+      "unit_index": 1,
+      "capacity": {
+        "cpu_millicores": 0.0,
+        "memory_bytes": 0.0,
+        "bandwidth_bytes_per_s": 1000000000,
+        "dsp_units": 0.0,
+        "fpga_units": 0.0,
+        "dsp_compute_mcycles_per_s": 1200,
+        "dsp_local_memory_bytes": 1048576,
+        "fpga_lut": 0.0,
+        "fpga_ff": 0.0,
+        "fpga_dsp48": 0.0,
+        "fpga_bram36": 0.0
+      },
+      "features": [
+        "C66x"
+      ]
+    },
+    {
+      "node_id": "c66x-core-2",
+      "hardware_id": "66AK2H06-core-2",
+      "device_id": "66AK2H06-0",
+      "processor": "dsp",
+      "unit_index": 2,
+      "capacity": {
+        "cpu_millicores": 0.0,
+        "memory_bytes": 0.0,
+        "bandwidth_bytes_per_s": 1000000000,
+        "dsp_units": 0.0,
+        "fpga_units": 0.0,
+        "dsp_compute_mcycles_per_s": 1200,
+        "dsp_local_memory_bytes": 1048576,
+        "fpga_lut": 0.0,
+        "fpga_ff": 0.0,
+        "fpga_dsp48": 0.0,
+        "fpga_bram36": 0.0
+      },
+      "features": [
+        "C66x"
+      ]
+    },
+    {
+      "node_id": "c66x-core-3",
+      "hardware_id": "66AK2H06-core-3",
+      "device_id": "66AK2H06-0",
+      "processor": "dsp",
+      "unit_index": 3,
+      "capacity": {
+        "cpu_millicores": 0.0,
+        "memory_bytes": 0.0,
+        "bandwidth_bytes_per_s": 1000000000,
+        "dsp_units": 0.0,
+        "fpga_units": 0.0,
+        "dsp_compute_mcycles_per_s": 1200,
+        "dsp_local_memory_bytes": 1048576,
+        "fpga_lut": 0.0,
+        "fpga_ff": 0.0,
+        "fpga_dsp48": 0.0,
+        "fpga_bram36": 0.0
+      },
+      "features": [
+        "C66x"
+      ]
+    },
+    {
+      "node_id": "xc7k410t-region-0",
+      "hardware_id": "XC7K410T-region-0",
+      "device_id": "XC7K410T-0",
+      "processor": "fpga",
+      "unit_index": 0,
+      "capacity": {
+        "cpu_millicores": 0.0,
+        "memory_bytes": 0.0,
+        "bandwidth_bytes_per_s": 1000000000,
+        "dsp_units": 0.0,
+        "fpga_units": 0.0,
+        "dsp_compute_mcycles_per_s": 0.0,
+        "dsp_local_memory_bytes": 0.0,
+        "fpga_lut": 50840,
+        "fpga_ff": 101680,
+        "fpga_dsp48": 308,
+        "fpga_bram36": 159
+      },
+      "features": [
+        "DSP48E1",
+        "BRAM36"
+      ]
+    },
+    {
+      "node_id": "xc7k410t-region-1",
+      "hardware_id": "XC7K410T-region-1",
+      "device_id": "XC7K410T-0",
+      "processor": "fpga",
+      "unit_index": 1,
+      "capacity": {
+        "cpu_millicores": 0.0,
+        "memory_bytes": 0.0,
+        "bandwidth_bytes_per_s": 1000000000,
+        "dsp_units": 0.0,
+        "fpga_units": 0.0,
+        "dsp_compute_mcycles_per_s": 0.0,
+        "dsp_local_memory_bytes": 0.0,
+        "fpga_lut": 50840,
+        "fpga_ff": 101680,
+        "fpga_dsp48": 308,
+        "fpga_bram36": 159
+      },
+      "features": [
+        "DSP48E1",
+        "BRAM36"
+      ]
+    },
+    {
+      "node_id": "xc7k410t-region-2",
+      "hardware_id": "XC7K410T-region-2",
+      "device_id": "XC7K410T-0",
+      "processor": "fpga",
+      "unit_index": 2,
+      "capacity": {
+        "cpu_millicores": 0.0,
+        "memory_bytes": 0.0,
+        "bandwidth_bytes_per_s": 1000000000,
+        "dsp_units": 0.0,
+        "fpga_units": 0.0,
+        "dsp_compute_mcycles_per_s": 0.0,
+        "dsp_local_memory_bytes": 0.0,
+        "fpga_lut": 50840,
+        "fpga_ff": 101680,
+        "fpga_dsp48": 308,
+        "fpga_bram36": 159
+      },
+      "features": [
+        "DSP48E1",
+        "BRAM36"
+      ]
+    },
+    {
+      "node_id": "xc7k410t-region-3",
+      "hardware_id": "XC7K410T-region-3",
+      "device_id": "XC7K410T-0",
+      "processor": "fpga",
+      "unit_index": 3,
+      "capacity": {
+        "cpu_millicores": 0.0,
+        "memory_bytes": 0.0,
+        "bandwidth_bytes_per_s": 1000000000,
+        "dsp_units": 0.0,
+        "fpga_units": 0.0,
+        "dsp_compute_mcycles_per_s": 0.0,
+        "dsp_local_memory_bytes": 0.0,
+        "fpga_lut": 50840,
+        "fpga_ff": 101680,
+        "fpga_dsp48": 308,
+        "fpga_bram36": 159
+      },
+      "features": [
+        "DSP48E1",
+        "BRAM36"
+      ]
+    }
+  ],
+  "links": [
+    {
+      "source": "sim-cpu",
+      "target": "c66x-core-0",
+      "capacity_bytes_per_s": 1000000000,
+      "latency_ms": 0.01
+    },
+    {
+      "source": "sim-cpu",
+      "target": "c66x-core-1",
+      "capacity_bytes_per_s": 1000000000,
+      "latency_ms": 0.01
+    },
+    {
+      "source": "sim-cpu",
+      "target": "c66x-core-2",
+      "capacity_bytes_per_s": 1000000000,
+      "latency_ms": 0.01
+    },
+    {
+      "source": "sim-cpu",
+      "target": "c66x-core-3",
+      "capacity_bytes_per_s": 1000000000,
+      "latency_ms": 0.01
+    },
+    {
+      "source": "sim-cpu",
+      "target": "xc7k410t-region-0",
+      "capacity_bytes_per_s": 1000000000,
+      "latency_ms": 0.01
+    },
+    {
+      "source": "sim-cpu",
+      "target": "xc7k410t-region-1",
+      "capacity_bytes_per_s": 1000000000,
+      "latency_ms": 0.01
+    },
+    {
+      "source": "sim-cpu",
+      "target": "xc7k410t-region-2",
+      "capacity_bytes_per_s": 1000000000,
+      "latency_ms": 0.01
+    },
+    {
+      "source": "sim-cpu",
+      "target": "xc7k410t-region-3",
+      "capacity_bytes_per_s": 1000000000,
+      "latency_ms": 0.01
+    },
+    {
+      "source": "c66x-core-0",
+      "target": "sim-cpu",
+      "capacity_bytes_per_s": 1000000000,
+      "latency_ms": 0.01
+    },
+    {
+      "source": "c66x-core-0",
+      "target": "c66x-core-1",
+      "capacity_bytes_per_s": 1000000000,
+      "latency_ms": 0.005
+    },
+    {
+      "source": "c66x-core-0",
+      "target": "c66x-core-2",
+      "capacity_bytes_per_s": 1000000000,
+      "latency_ms": 0.005
+    },
+    {
+      "source": "c66x-core-0",
+      "target": "c66x-core-3",
+      "capacity_bytes_per_s": 1000000000,
+      "latency_ms": 0.005
+    },
+    {
+      "source": "c66x-core-0",
+      "target": "xc7k410t-region-0",
+      "capacity_bytes_per_s": 1000000000,
+      "latency_ms": 0.01
+    },
+    {
+      "source": "c66x-core-0",
+      "target": "xc7k410t-region-1",
+      "capacity_bytes_per_s": 1000000000,
+      "latency_ms": 0.01
+    },
+    {
+      "source": "c66x-core-0",
+      "target": "xc7k410t-region-2",
+      "capacity_bytes_per_s": 1000000000,
+      "latency_ms": 0.01
+    },
+    {
+      "source": "c66x-core-0",
+      "target": "xc7k410t-region-3",
+      "capacity_bytes_per_s": 1000000000,
+      "latency_ms": 0.01
+    },
+    {
+      "source": "c66x-core-1",
+      "target": "sim-cpu",
+      "capacity_bytes_per_s": 1000000000,
+      "latency_ms": 0.01
+    },
+    {
+      "source": "c66x-core-1",
+      "target": "c66x-core-0",
+      "capacity_bytes_per_s": 1000000000,
+      "latency_ms": 0.005
+    },
+    {
+      "source": "c66x-core-1",
+      "target": "c66x-core-2",
+      "capacity_bytes_per_s": 1000000000,
+      "latency_ms": 0.005
+    },
+    {
+      "source": "c66x-core-1",
+      "target": "c66x-core-3",
+      "capacity_bytes_per_s": 1000000000,
+      "latency_ms": 0.005
+    },
+    {
+      "source": "c66x-core-1",
+      "target": "xc7k410t-region-0",
+      "capacity_bytes_per_s": 1000000000,
+      "latency_ms": 0.01
+    },
+    {
+      "source": "c66x-core-1",
+      "target": "xc7k410t-region-1",
+      "capacity_bytes_per_s": 1000000000,
+      "latency_ms": 0.01
+    },
+    {
+      "source": "c66x-core-1",
+      "target": "xc7k410t-region-2",
+      "capacity_bytes_per_s": 1000000000,
+      "latency_ms": 0.01
+    },
+    {
+      "source": "c66x-core-1",
+      "target": "xc7k410t-region-3",
+      "capacity_bytes_per_s": 1000000000,
+      "latency_ms": 0.01
+    },
+    {
+      "source": "c66x-core-2",
+      "target": "sim-cpu",
+      "capacity_bytes_per_s": 1000000000,
+      "latency_ms": 0.01
+    },
+    {
+      "source": "c66x-core-2",
+      "target": "c66x-core-0",
+      "capacity_bytes_per_s": 1000000000,
+      "latency_ms": 0.005
+    },
+    {
+      "source": "c66x-core-2",
+      "target": "c66x-core-1",
+      "capacity_bytes_per_s": 1000000000,
+      "latency_ms": 0.005
+    },
+    {
+      "source": "c66x-core-2",
+      "target": "c66x-core-3",
+      "capacity_bytes_per_s": 1000000000,
+      "latency_ms": 0.005
+    },
+    {
+      "source": "c66x-core-2",
+      "target": "xc7k410t-region-0",
+      "capacity_bytes_per_s": 1000000000,
+      "latency_ms": 0.01
+    },
+    {
+      "source": "c66x-core-2",
+      "target": "xc7k410t-region-1",
+      "capacity_bytes_per_s": 1000000000,
+      "latency_ms": 0.01
+    },
+    {
+      "source": "c66x-core-2",
+      "target": "xc7k410t-region-2",
+      "capacity_bytes_per_s": 1000000000,
+      "latency_ms": 0.01
+    },
+    {
+      "source": "c66x-core-2",
+      "target": "xc7k410t-region-3",
+      "capacity_bytes_per_s": 1000000000,
+      "latency_ms": 0.01
+    },
+    {
+      "source": "c66x-core-3",
+      "target": "sim-cpu",
+      "capacity_bytes_per_s": 1000000000,
+      "latency_ms": 0.01
+    },
+    {
+      "source": "c66x-core-3",
+      "target": "c66x-core-0",
+      "capacity_bytes_per_s": 1000000000,
+      "latency_ms": 0.005
+    },
+    {
+      "source": "c66x-core-3",
+      "target": "c66x-core-1",
+      "capacity_bytes_per_s": 1000000000,
+      "latency_ms": 0.005
+    },
+    {
+      "source": "c66x-core-3",
+      "target": "c66x-core-2",
+      "capacity_bytes_per_s": 1000000000,
+      "latency_ms": 0.005
+    },
+    {
+      "source": "c66x-core-3",
+      "target": "xc7k410t-region-0",
+      "capacity_bytes_per_s": 1000000000,
+      "latency_ms": 0.01
+    },
+    {
+      "source": "c66x-core-3",
+      "target": "xc7k410t-region-1",
+      "capacity_bytes_per_s": 1000000000,
+      "latency_ms": 0.01
+    },
+    {
+      "source": "c66x-core-3",
+      "target": "xc7k410t-region-2",
+      "capacity_bytes_per_s": 1000000000,
+      "latency_ms": 0.01
+    },
+    {
+      "source": "c66x-core-3",
+      "target": "xc7k410t-region-3",
+      "capacity_bytes_per_s": 1000000000,
+      "latency_ms": 0.01
+    },
+    {
+      "source": "xc7k410t-region-0",
+      "target": "sim-cpu",
+      "capacity_bytes_per_s": 1000000000,
+      "latency_ms": 0.01
+    },
+    {
+      "source": "xc7k410t-region-0",
+      "target": "c66x-core-0",
+      "capacity_bytes_per_s": 1000000000,
+      "latency_ms": 0.01
+    },
+    {
+      "source": "xc7k410t-region-0",
+      "target": "c66x-core-1",
+      "capacity_bytes_per_s": 1000000000,
+      "latency_ms": 0.01
+    },
+    {
+      "source": "xc7k410t-region-0",
+      "target": "c66x-core-2",
+      "capacity_bytes_per_s": 1000000000,
+      "latency_ms": 0.01
+    },
+    {
+      "source": "xc7k410t-region-0",
+      "target": "c66x-core-3",
+      "capacity_bytes_per_s": 1000000000,
+      "latency_ms": 0.01
+    },
+    {
+      "source": "xc7k410t-region-0",
+      "target": "xc7k410t-region-1",
+      "capacity_bytes_per_s": 1000000000,
+      "latency_ms": 0.005
+    },
+    {
+      "source": "xc7k410t-region-0",
+      "target": "xc7k410t-region-2",
+      "capacity_bytes_per_s": 1000000000,
+      "latency_ms": 0.005
+    },
+    {
+      "source": "xc7k410t-region-0",
+      "target": "xc7k410t-region-3",
+      "capacity_bytes_per_s": 1000000000,
+      "latency_ms": 0.005
+    },
+    {
+      "source": "xc7k410t-region-1",
+      "target": "sim-cpu",
+      "capacity_bytes_per_s": 1000000000,
+      "latency_ms": 0.01
+    },
+    {
+      "source": "xc7k410t-region-1",
+      "target": "c66x-core-0",
+      "capacity_bytes_per_s": 1000000000,
+      "latency_ms": 0.01
+    },
+    {
+      "source": "xc7k410t-region-1",
+      "target": "c66x-core-1",
+      "capacity_bytes_per_s": 1000000000,
+      "latency_ms": 0.01
+    },
+    {
+      "source": "xc7k410t-region-1",
+      "target": "c66x-core-2",
+      "capacity_bytes_per_s": 1000000000,
+      "latency_ms": 0.01
+    },
+    {
+      "source": "xc7k410t-region-1",
+      "target": "c66x-core-3",
+      "capacity_bytes_per_s": 1000000000,
+      "latency_ms": 0.01
+    },
+    {
+      "source": "xc7k410t-region-1",
+      "target": "xc7k410t-region-0",
+      "capacity_bytes_per_s": 1000000000,
+      "latency_ms": 0.005
+    },
+    {
+      "source": "xc7k410t-region-1",
+      "target": "xc7k410t-region-2",
+      "capacity_bytes_per_s": 1000000000,
+      "latency_ms": 0.005
+    },
+    {
+      "source": "xc7k410t-region-1",
+      "target": "xc7k410t-region-3",
+      "capacity_bytes_per_s": 1000000000,
+      "latency_ms": 0.005
+    },
+    {
+      "source": "xc7k410t-region-2",
+      "target": "sim-cpu",
+      "capacity_bytes_per_s": 1000000000,
+      "latency_ms": 0.01
+    },
+    {
+      "source": "xc7k410t-region-2",
+      "target": "c66x-core-0",
+      "capacity_bytes_per_s": 1000000000,
+      "latency_ms": 0.01
+    },
+    {
+      "source": "xc7k410t-region-2",
+      "target": "c66x-core-1",
+      "capacity_bytes_per_s": 1000000000,
+      "latency_ms": 0.01
+    },
+    {
+      "source": "xc7k410t-region-2",
+      "target": "c66x-core-2",
+      "capacity_bytes_per_s": 1000000000,
+      "latency_ms": 0.01
+    },
+    {
+      "source": "xc7k410t-region-2",
+      "target": "c66x-core-3",
+      "capacity_bytes_per_s": 1000000000,
+      "latency_ms": 0.01
+    },
+    {
+      "source": "xc7k410t-region-2",
+      "target": "xc7k410t-region-0",
+      "capacity_bytes_per_s": 1000000000,
+      "latency_ms": 0.005
+    },
+    {
+      "source": "xc7k410t-region-2",
+      "target": "xc7k410t-region-1",
+      "capacity_bytes_per_s": 1000000000,
+      "latency_ms": 0.005
+    },
+    {
+      "source": "xc7k410t-region-2",
+      "target": "xc7k410t-region-3",
+      "capacity_bytes_per_s": 1000000000,
+      "latency_ms": 0.005
+    },
+    {
+      "source": "xc7k410t-region-3",
+      "target": "sim-cpu",
+      "capacity_bytes_per_s": 1000000000,
+      "latency_ms": 0.01
+    },
+    {
+      "source": "xc7k410t-region-3",
+      "target": "c66x-core-0",
+      "capacity_bytes_per_s": 1000000000,
+      "latency_ms": 0.01
+    },
+    {
+      "source": "xc7k410t-region-3",
+      "target": "c66x-core-1",
+      "capacity_bytes_per_s": 1000000000,
+      "latency_ms": 0.01
+    },
+    {
+      "source": "xc7k410t-region-3",
+      "target": "c66x-core-2",
+      "capacity_bytes_per_s": 1000000000,
+      "latency_ms": 0.01
+    },
+    {
+      "source": "xc7k410t-region-3",
+      "target": "c66x-core-3",
+      "capacity_bytes_per_s": 1000000000,
+      "latency_ms": 0.01
+    },
+    {
+      "source": "xc7k410t-region-3",
+      "target": "xc7k410t-region-0",
+      "capacity_bytes_per_s": 1000000000,
+      "latency_ms": 0.005
+    },
+    {
+      "source": "xc7k410t-region-3",
+      "target": "xc7k410t-region-1",
+      "capacity_bytes_per_s": 1000000000,
+      "latency_ms": 0.005
+    },
+    {
+      "source": "xc7k410t-region-3",
+      "target": "xc7k410t-region-2",
+      "capacity_bytes_per_s": 1000000000,
+      "latency_ms": 0.005
+    }
+  ],
+  "profiles": "heterogeneous_simulation_profiles.json",
+  "transfers": [
+    {
+      "source": "main-03:filter",
+      "target": "main-03:sensing",
+      "bytes_per_call": 32768,
+      "reserved_bytes_per_s": 100000000
+    },
+    {
+      "source": "main-02:ddc",
+      "target": "main-03:filter",
+      "bytes_per_call": 32768,
+      "reserved_bytes_per_s": 100000000
+    },
+    {
+      "source": "rx-02:ofdm_rx",
+      "target": "rx-02:qpsk_demod",
+      "bytes_per_call": 3424,
+      "reserved_bytes_per_s": 1000000
+    },
+    {
+      "source": "rx-02:qpsk_demod",
+      "target": "rx-02:fec_decode",
+      "bytes_per_call": 3424,
+      "reserved_bytes_per_s": 1000000
+    },
+    {
+      "source": "rx-02:fec_decode",
+      "target": "rx-02:frame_verify",
+      "bytes_per_call": 208,
+      "reserved_bytes_per_s": 1000000
+    },
+    {
+      "source": "rx-02:frame_verify",
+      "target": "rx-02:reassemble",
+      "bytes_per_call": 16,
+      "reserved_bytes_per_s": 1000000
+    }
+  ],
+  "initial_state": {
+    "node_used": {
+      "sim-cpu": {
+        "cpu_millicores": 500,
+        "memory_bytes": 67108864,
+        "bandwidth_bytes_per_s": 0.0,
+        "dsp_units": 0.0,
+        "fpga_units": 0.0,
+        "dsp_compute_mcycles_per_s": 0.0,
+        "dsp_local_memory_bytes": 0.0,
+        "fpga_lut": 0.0,
+        "fpga_ff": 0.0,
+        "fpga_dsp48": 0.0,
+        "fpga_bram36": 0.0
+      },
+      "c66x-core-0": {
+        "cpu_millicores": 0.0,
+        "memory_bytes": 0.0,
+        "bandwidth_bytes_per_s": 0.0,
+        "dsp_units": 0.0,
+        "fpga_units": 0.0,
+        "dsp_compute_mcycles_per_s": 100,
+        "dsp_local_memory_bytes": 65536,
+        "fpga_lut": 0.0,
+        "fpga_ff": 0.0,
+        "fpga_dsp48": 0.0,
+        "fpga_bram36": 0.0
+      },
+      "c66x-core-1": {
+        "cpu_millicores": 0.0,
+        "memory_bytes": 0.0,
+        "bandwidth_bytes_per_s": 0.0,
+        "dsp_units": 0.0,
+        "fpga_units": 0.0,
+        "dsp_compute_mcycles_per_s": 0.0,
+        "dsp_local_memory_bytes": 0.0,
+        "fpga_lut": 0.0,
+        "fpga_ff": 0.0,
+        "fpga_dsp48": 0.0,
+        "fpga_bram36": 0.0
+      },
+      "c66x-core-2": {
+        "cpu_millicores": 0.0,
+        "memory_bytes": 0.0,
+        "bandwidth_bytes_per_s": 0.0,
+        "dsp_units": 0.0,
+        "fpga_units": 0.0,
+        "dsp_compute_mcycles_per_s": 0.0,
+        "dsp_local_memory_bytes": 0.0,
+        "fpga_lut": 0.0,
+        "fpga_ff": 0.0,
+        "fpga_dsp48": 0.0,
+        "fpga_bram36": 0.0
+      },
+      "c66x-core-3": {
+        "cpu_millicores": 0.0,
+        "memory_bytes": 0.0,
+        "bandwidth_bytes_per_s": 0.0,
+        "dsp_units": 0.0,
+        "fpga_units": 0.0,
+        "dsp_compute_mcycles_per_s": 0.0,
+        "dsp_local_memory_bytes": 0.0,
+        "fpga_lut": 0.0,
+        "fpga_ff": 0.0,
+        "fpga_dsp48": 0.0,
+        "fpga_bram36": 0.0
+      },
+      "xc7k410t-region-0": {
+        "cpu_millicores": 0.0,
+        "memory_bytes": 0.0,
+        "bandwidth_bytes_per_s": 0.0,
+        "dsp_units": 0.0,
+        "fpga_units": 0.0,
+        "dsp_compute_mcycles_per_s": 0.0,
+        "dsp_local_memory_bytes": 0.0,
+        "fpga_lut": 8000,
+        "fpga_ff": 16000,
+        "fpga_dsp48": 40,
+        "fpga_bram36": 20
+      },
+      "xc7k410t-region-1": {
+        "cpu_millicores": 0.0,
+        "memory_bytes": 0.0,
+        "bandwidth_bytes_per_s": 0.0,
+        "dsp_units": 0.0,
+        "fpga_units": 0.0,
+        "dsp_compute_mcycles_per_s": 0.0,
+        "dsp_local_memory_bytes": 0.0,
+        "fpga_lut": 0.0,
+        "fpga_ff": 0.0,
+        "fpga_dsp48": 0.0,
+        "fpga_bram36": 0.0
+      },
+      "xc7k410t-region-2": {
+        "cpu_millicores": 0.0,
+        "memory_bytes": 0.0,
+        "bandwidth_bytes_per_s": 0.0,
+        "dsp_units": 0.0,
+        "fpga_units": 0.0,
+        "dsp_compute_mcycles_per_s": 0.0,
+        "dsp_local_memory_bytes": 0.0,
+        "fpga_lut": 0.0,
+        "fpga_ff": 0.0,
+        "fpga_dsp48": 0.0,
+        "fpga_bram36": 0.0
+      },
+      "xc7k410t-region-3": {
+        "cpu_millicores": 0.0,
+        "memory_bytes": 0.0,
+        "bandwidth_bytes_per_s": 0.0,
+        "dsp_units": 0.0,
+        "fpga_units": 0.0,
+        "dsp_compute_mcycles_per_s": 0.0,
+        "dsp_local_memory_bytes": 0.0,
+        "fpga_lut": 0.0,
+        "fpga_ff": 0.0,
+        "fpga_dsp48": 0.0,
+        "fpga_bram36": 0.0
+      }
+    },
+    "link_used": [
+      {
+        "source": "sim-cpu",
+        "target": "c66x-core-0",
+        "used_bytes_per_s": 0
+      },
+      {
+        "source": "sim-cpu",
+        "target": "c66x-core-1",
+        "used_bytes_per_s": 0
+      },
+      {
+        "source": "sim-cpu",
+        "target": "c66x-core-2",
+        "used_bytes_per_s": 0
+      },
+      {
+        "source": "sim-cpu",
+        "target": "c66x-core-3",
+        "used_bytes_per_s": 0
+      },
+      {
+        "source": "sim-cpu",
+        "target": "xc7k410t-region-0",
+        "used_bytes_per_s": 0
+      },
+      {
+        "source": "sim-cpu",
+        "target": "xc7k410t-region-1",
+        "used_bytes_per_s": 0
+      },
+      {
+        "source": "sim-cpu",
+        "target": "xc7k410t-region-2",
+        "used_bytes_per_s": 0
+      },
+      {
+        "source": "sim-cpu",
+        "target": "xc7k410t-region-3",
+        "used_bytes_per_s": 0
+      },
+      {
+        "source": "c66x-core-0",
+        "target": "sim-cpu",
+        "used_bytes_per_s": 0
+      },
+      {
+        "source": "c66x-core-0",
+        "target": "c66x-core-1",
+        "used_bytes_per_s": 0
+      },
+      {
+        "source": "c66x-core-0",
+        "target": "c66x-core-2",
+        "used_bytes_per_s": 0
+      },
+      {
+        "source": "c66x-core-0",
+        "target": "c66x-core-3",
+        "used_bytes_per_s": 0
+      },
+      {
+        "source": "c66x-core-0",
+        "target": "xc7k410t-region-0",
+        "used_bytes_per_s": 0
+      },
+      {
+        "source": "c66x-core-0",
+        "target": "xc7k410t-region-1",
+        "used_bytes_per_s": 0
+      },
+      {
+        "source": "c66x-core-0",
+        "target": "xc7k410t-region-2",
+        "used_bytes_per_s": 0
+      },
+      {
+        "source": "c66x-core-0",
+        "target": "xc7k410t-region-3",
+        "used_bytes_per_s": 0
+      },
+      {
+        "source": "c66x-core-1",
+        "target": "sim-cpu",
+        "used_bytes_per_s": 0
+      },
+      {
+        "source": "c66x-core-1",
+        "target": "c66x-core-0",
+        "used_bytes_per_s": 0
+      },
+      {
+        "source": "c66x-core-1",
+        "target": "c66x-core-2",
+        "used_bytes_per_s": 0
+      },
+      {
+        "source": "c66x-core-1",
+        "target": "c66x-core-3",
+        "used_bytes_per_s": 0
+      },
+      {
+        "source": "c66x-core-1",
+        "target": "xc7k410t-region-0",
+        "used_bytes_per_s": 0
+      },
+      {
+        "source": "c66x-core-1",
+        "target": "xc7k410t-region-1",
+        "used_bytes_per_s": 0
+      },
+      {
+        "source": "c66x-core-1",
+        "target": "xc7k410t-region-2",
+        "used_bytes_per_s": 0
+      },
+      {
+        "source": "c66x-core-1",
+        "target": "xc7k410t-region-3",
+        "used_bytes_per_s": 0
+      },
+      {
+        "source": "c66x-core-2",
+        "target": "sim-cpu",
+        "used_bytes_per_s": 0
+      },
+      {
+        "source": "c66x-core-2",
+        "target": "c66x-core-0",
+        "used_bytes_per_s": 0
+      },
+      {
+        "source": "c66x-core-2",
+        "target": "c66x-core-1",
+        "used_bytes_per_s": 0
+      },
+      {
+        "source": "c66x-core-2",
+        "target": "c66x-core-3",
+        "used_bytes_per_s": 0
+      },
+      {
+        "source": "c66x-core-2",
+        "target": "xc7k410t-region-0",
+        "used_bytes_per_s": 0
+      },
+      {
+        "source": "c66x-core-2",
+        "target": "xc7k410t-region-1",
+        "used_bytes_per_s": 0
+      },
+      {
+        "source": "c66x-core-2",
+        "target": "xc7k410t-region-2",
+        "used_bytes_per_s": 0
+      },
+      {
+        "source": "c66x-core-2",
+        "target": "xc7k410t-region-3",
+        "used_bytes_per_s": 0
+      },
+      {
+        "source": "c66x-core-3",
+        "target": "sim-cpu",
+        "used_bytes_per_s": 0
+      },
+      {
+        "source": "c66x-core-3",
+        "target": "c66x-core-0",
+        "used_bytes_per_s": 0
+      },
+      {
+        "source": "c66x-core-3",
+        "target": "c66x-core-1",
+        "used_bytes_per_s": 0
+      },
+      {
+        "source": "c66x-core-3",
+        "target": "c66x-core-2",
+        "used_bytes_per_s": 0
+      },
+      {
+        "source": "c66x-core-3",
+        "target": "xc7k410t-region-0",
+        "used_bytes_per_s": 0
+      },
+      {
+        "source": "c66x-core-3",
+        "target": "xc7k410t-region-1",
+        "used_bytes_per_s": 0
+      },
+      {
+        "source": "c66x-core-3",
+        "target": "xc7k410t-region-2",
+        "used_bytes_per_s": 0
+      },
+      {
+        "source": "c66x-core-3",
+        "target": "xc7k410t-region-3",
+        "used_bytes_per_s": 0
+      },
+      {
+        "source": "xc7k410t-region-0",
+        "target": "sim-cpu",
+        "used_bytes_per_s": 0
+      },
+      {
+        "source": "xc7k410t-region-0",
+        "target": "c66x-core-0",
+        "used_bytes_per_s": 0
+      },
+      {
+        "source": "xc7k410t-region-0",
+        "target": "c66x-core-1",
+        "used_bytes_per_s": 0
+      },
+      {
+        "source": "xc7k410t-region-0",
+        "target": "c66x-core-2",
+        "used_bytes_per_s": 0
+      },
+      {
+        "source": "xc7k410t-region-0",
+        "target": "c66x-core-3",
+        "used_bytes_per_s": 0
+      },
+      {
+        "source": "xc7k410t-region-0",
+        "target": "xc7k410t-region-1",
+        "used_bytes_per_s": 0
+      },
+      {
+        "source": "xc7k410t-region-0",
+        "target": "xc7k410t-region-2",
+        "used_bytes_per_s": 0
+      },
+      {
+        "source": "xc7k410t-region-0",
+        "target": "xc7k410t-region-3",
+        "used_bytes_per_s": 0
+      },
+      {
+        "source": "xc7k410t-region-1",
+        "target": "sim-cpu",
+        "used_bytes_per_s": 0
+      },
+      {
+        "source": "xc7k410t-region-1",
+        "target": "c66x-core-0",
+        "used_bytes_per_s": 0
+      },
+      {
+        "source": "xc7k410t-region-1",
+        "target": "c66x-core-1",
+        "used_bytes_per_s": 0
+      },
+      {
+        "source": "xc7k410t-region-1",
+        "target": "c66x-core-2",
+        "used_bytes_per_s": 0
+      },
+      {
+        "source": "xc7k410t-region-1",
+        "target": "c66x-core-3",
+        "used_bytes_per_s": 0
+      },
+      {
+        "source": "xc7k410t-region-1",
+        "target": "xc7k410t-region-0",
+        "used_bytes_per_s": 0
+      },
+      {
+        "source": "xc7k410t-region-1",
+        "target": "xc7k410t-region-2",
+        "used_bytes_per_s": 0
+      },
+      {
+        "source": "xc7k410t-region-1",
+        "target": "xc7k410t-region-3",
+        "used_bytes_per_s": 0
+      },
+      {
+        "source": "xc7k410t-region-2",
+        "target": "sim-cpu",
+        "used_bytes_per_s": 0
+      },
+      {
+        "source": "xc7k410t-region-2",
+        "target": "c66x-core-0",
+        "used_bytes_per_s": 0
+      },
+      {
+        "source": "xc7k410t-region-2",
+        "target": "c66x-core-1",
+        "used_bytes_per_s": 0
+      },
+      {
+        "source": "xc7k410t-region-2",
+        "target": "c66x-core-2",
+        "used_bytes_per_s": 0
+      },
+      {
+        "source": "xc7k410t-region-2",
+        "target": "c66x-core-3",
+        "used_bytes_per_s": 0
+      },
+      {
+        "source": "xc7k410t-region-2",
+        "target": "xc7k410t-region-0",
+        "used_bytes_per_s": 0
+      },
+      {
+        "source": "xc7k410t-region-2",
+        "target": "xc7k410t-region-1",
+        "used_bytes_per_s": 0
+      },
+      {
+        "source": "xc7k410t-region-2",
+        "target": "xc7k410t-region-3",
+        "used_bytes_per_s": 0
+      },
+      {
+        "source": "xc7k410t-region-3",
+        "target": "sim-cpu",
+        "used_bytes_per_s": 0
+      },
+      {
+        "source": "xc7k410t-region-3",
+        "target": "c66x-core-0",
+        "used_bytes_per_s": 0
+      },
+      {
+        "source": "xc7k410t-region-3",
+        "target": "c66x-core-1",
+        "used_bytes_per_s": 0
+      },
+      {
+        "source": "xc7k410t-region-3",
+        "target": "c66x-core-2",
+        "used_bytes_per_s": 0
+      },
+      {
+        "source": "xc7k410t-region-3",
+        "target": "c66x-core-3",
+        "used_bytes_per_s": 0
+      },
+      {
+        "source": "xc7k410t-region-3",
+        "target": "xc7k410t-region-0",
+        "used_bytes_per_s": 0
+      },
+      {
+        "source": "xc7k410t-region-3",
+        "target": "xc7k410t-region-1",
+        "used_bytes_per_s": 0
+      },
+      {
+        "source": "xc7k410t-region-3",
+        "target": "xc7k410t-region-2",
+        "used_bytes_per_s": 0
+      }
+    ]
+  }
+}

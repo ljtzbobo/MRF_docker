@@ -1,5 +1,7 @@
 # 上层业务请求样例
 
+**数据性质：本目录均为合成接口测试样例，不是任务数据集。** `External/01`–`07`、`all_tasks.json` 以及语音发送样例用于接口和算法链回归验证；External 指请求格式，而非真实采集来源。逐文件定位见 [External/README.md](External/README.md)，真实数据存放规范见 [datasets](../../datasets/README.md)。
+
 `External/` 保存外部射频业务请求及其合集，根目录的 `voice_transmit_request.json` 也是同一格式。批量解析后，任务表征模块按任务族提取公共抽象功能图；具体格式与组件匹配前的细化步骤见 [`task_repr/README.md`](../../task_repr/README.md)。
 
 `voice_transmit_request.json` 模拟语音业务模块提交的发送请求。`request.audio_source.reference` 是 PCM 缓冲区或流的标识，样例不包含实际音频数据；请求中也不包含组件 ID 或功能 DAG。

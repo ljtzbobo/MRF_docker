@@ -5,12 +5,22 @@ import { Background } from '@vue-flow/background'
 import { Controls } from '@vue-flow/controls'
 import { Maximize2 } from 'lucide-vue-next'
 import { layoutGraph } from '../graph'
-import type { GraphData, GraphLevel } from '../types'
+import type { ExecutionProgress, GraphData, GraphLevel, RecordValue } from '../types'
 import TaskNode from './TaskNode.vue'
 
-const props = defineProps<{ graph: GraphData | null; level: GraphLevel; selectedId: string | null }>()
+const props = defineProps<{ graph: GraphData | null; level: GraphLevel; selectedId: string | null; plan?: RecordValue | null; progress?: ExecutionProgress | null }>()
 const emit = defineEmits<{ select: [id: string | null] }>()
-const layout = computed(() => props.graph ? layoutGraph(props.graph, props.level) : { nodes: [], edges: [] })
+const layout = computed(() => {
+  const graph = props.graph ? layoutGraph(props.graph, props.level) : { nodes: [], edges: [] }
+  if (props.level === 'component') {
+    const allocations = (props.plan?.allocations ?? []) as RecordValue[]
+    graph.nodes = graph.nodes.map(n => ({ ...n, data: { ...n.data,
+      execution_state: props.progress?.nodes[n.id]?.state,
+      processing_node_id: allocations.find(a => a.node_id === n.id)?.processing_node_id,
+    } }))
+  }
+  return graph
+})
 const narrow = window.matchMedia('(max-width: 800px)').matches
 
 function selectNode(event: NodeMouseEvent) {

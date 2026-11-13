@@ -1,15 +1,16 @@
 """固定组件 DAG 在处理节点上的初始分配与有界优化搜索。"""
 
 from dataclasses import asdict, dataclass, replace
+from copy import deepcopy
 import math
 
 from matching.matcher import StaticMatchResult
 from task_repr.models.task import TaskRepresentation
 from task_repr.template.refinement import SpecificationTask
 
-from .measurements import (MeasurementCatalog,
+from .measurements import (MeasurementCatalog, execution_profile_basis,
                            PhysicalHardwareProfile, PhysicalUsage)
-from .planner import _time_limit
+from .constraints import task_time_limit as _time_limit
 
 
 _FIELDS = tuple(PhysicalUsage.__dataclass_fields__)
@@ -19,6 +20,9 @@ _FIELDS = tuple(PhysicalUsage.__dataclass_fields__)
 class ProcessingNode:
     node_id: str
     hardware: PhysicalHardwareProfile
+    device_id: str | None = None
+    processor: str | None = None
+    unit_index: int | None = None
 
 
 @dataclass(frozen=True)
@@ -50,9 +54,26 @@ class EdgeTransfer:
 
 
 @dataclass(frozen=True)
+class ReusableInstance:
+    instance_id: str
+    processing_node_id: str
+    cid: str
+    implementation_id: str
+    demand: PhysicalUsage
+    resident_demand: PhysicalUsage
+    acquisition: str = "warm_reuse"
+    setup_ms: float | None = None
+    cost_basis: str = "profile_setup_fallback"
+
+
+@dataclass(frozen=True)
 class PlacementState:
     node_used: dict[str, PhysicalUsage]
     link_used: dict[tuple[str, str], float]
+    # Candidates have already passed strict runtime/configuration compatibility checks.
+    reuse_candidates: dict[str, tuple[ReusableInstance, ...]] | None = None
+    required_reuse: dict[str, str] | None = None
+    cold_setup_costs: dict | None = None
 
 
 @dataclass(frozen=True)
@@ -66,6 +87,14 @@ class PlacementAllocation:
     demand: PhysicalUsage
     runtime_p95_ms: float
     setup_p95_ms: float
+    device_id: str | None = None
+    core_id: int | None = None
+    region_id: int | None = None
+    lease_id: str | None = None
+    acquisition: str = "cold_start"
+    runtime_identity: str | None = None
+    estimated_acquisition_ms: float | None = None
+    acquisition_cost_basis: str = "profile_setup"
 
     def to_dict(self) -> dict:
         return {**asdict(self), "demand": asdict(self.demand)}
@@ -88,6 +117,8 @@ class PlacementPlan:
     optimality_proven: bool = False
     frame_count: int = 1
     estimation_basis: str = "serial_setup_plus_frames_times_process_and_transfer; sum_of_profile_statistics_not_task_p95"
+    profile_basis: str = "unspecified"
+    dispatch: dict | None = None
 
     def to_dict(self) -> dict:
         return {"task_id": self.task_id, "status": self.status,
@@ -99,7 +130,8 @@ class PlacementPlan:
                 "time_limit_ms": self.time_limit_ms, "issues": list(self.issues),
                 "explored": self.explored, "exhaustive": self.exhaustive,
                 "algorithm": self.algorithm, "optimality_proven": self.optimality_proven,
-                "frame_count": self.frame_count, "estimation_basis": self.estimation_basis}
+                "frame_count": self.frame_count, "estimation_basis": self.estimation_basis,
+                "profile_basis": self.profile_basis, "dispatch": deepcopy(self.dispatch)}
 
 
 def _add(left: PhysicalUsage, right: PhysicalUsage) -> PhysicalUsage:
@@ -152,6 +184,27 @@ class PlacementProblem:
     edges: tuple
     frame_count: int
 
+    def reused_instances(self, assignment):
+        selected = {}
+        occupied = set()
+        required_bindings = self.state.required_reuse or {}
+        for node_id in self.order:
+            if node_id not in assignment:
+                continue
+            host, measurement = assignment[node_id]
+            for item in (self.state.reuse_candidates or {}).get(node_id, ()):
+                required = required_bindings.get(node_id)
+                if ((required is None or item.instance_id == required)
+                        and (item.instance_id not in required_bindings.values() or item.instance_id == required)
+                        and item.instance_id not in occupied and item.processing_node_id == host
+                        and item.cid == measurement.cid
+                        and item.implementation_id == measurement.implementation_id
+                        and item.demand == measurement.demand):
+                    selected[node_id] = item
+                    occupied.add(item.instance_id)
+                    break
+        return selected
+
     def evaluate(self, assignment, *, complete=False):
         """Validate partial or complete assignments using the same reservation rules."""
         if complete and set(assignment) != set(self.order):
@@ -160,15 +213,33 @@ class PlacementProblem:
         link_demand = {key: 0.0 for key in self.links}
         edge_ms = {}
         setup = process = 0.0
+        credits = {}
+        reused = self.reused_instances(assignment)
+        for node_id, identifier in (self.state.required_reuse or {}).items():
+            if node_id in assignment and (node_id not in reused or reused[node_id].instance_id != identifier):
+                raise ValueError(f"{node_id}: required reusable instance is unavailable")
+        for item in reused.values():
+            host = item.processing_node_id
+            credits[host] = _add(credits.get(host, PhysicalUsage()), item.resident_demand)
         for node_id, option in assignment.items():
             if node_id not in self.options or option not in self.options[node_id]:
                 raise ValueError(f"{node_id}: incompatible placement candidate")
             host, measurement = option
             demands[host] = _add(demands[host], measurement.demand)
-            if not _fits(_add(demands[host], self.state.node_used[host]),
-                         self.nodes[host].hardware.capacity):
+            credit = credits.get(host)
+            if credit is None:
+                fits = _fits(_add(demands[host], self.state.node_used[host]), self.nodes[host].hardware.capacity)
+            else:
+                fits = all(getattr(self.state.node_used[host], key) - getattr(credit, key)
+                           + getattr(demands[host], key) <= getattr(self.nodes[host].hardware.capacity, key)
+                           for key in _FIELDS)
+            if not fits:
                 raise ValueError(f"{host}: node capacity exceeded by {node_id}")
-            setup += measurement.setup_p95_ms
+            candidate = reused.get(node_id)
+            cold_cost = (self.state.cold_setup_costs or {}).get(node_id, {}).get(
+                (host, measurement.implementation_id), (measurement.effective_setup_ms, "profile_setup"))
+            setup += (candidate.setup_ms if candidate is not None and candidate.setup_ms is not None
+                      else cold_cost[0])
             process += measurement.runtime_p95_ms
         for source, target in self.edges:
             if source not in assignment or target not in assignment:
@@ -196,7 +267,7 @@ class PlacementProblem:
 
     def node_cost(self, option):
         measurement = option[1]
-        return measurement.setup_p95_ms + self.frame_count * measurement.runtime_p95_ms
+        return measurement.effective_setup_ms + self.frame_count * measurement.runtime_p95_ms
 
     def average_transfer(self, source, target):
         transfer = self.transfers[(source, target)]
@@ -307,6 +378,14 @@ class PlacementPlanner:
             options[key] = tuple((host, item) for host in allowed
                                  for item in self.measurements.candidates(
                                      binding.cid, binding.parameters, self.nodes[host].hardware))
+            required = (state.required_reuse or {}).get(key)
+            if required:
+                reusable = next((r for r in (state.reuse_candidates or {}).get(key, ())
+                                 if r.instance_id == required), None)
+                options[key] = tuple((host, item) for host, item in options[key]
+                    if reusable is not None and host == reusable.processing_node_id
+                    and item.cid == reusable.cid and item.implementation_id == reusable.implementation_id
+                    and item.demand == reusable.demand)
         missing = [f"{key}: no compatible measurement or processing node for {match.bindings[key].cid}"
                    for key in order if not options[key]]
         if missing:
@@ -320,17 +399,29 @@ class PlacementPlanner:
         allocations = ()
         demands, links, transfers = {}, {}, {}
         duration = None
+        basis = "unspecified"
         status = "UNSUPPORTED_GRAPH" if outcome.unsupported else (
             "SEARCH_LIMIT" if outcome.limited else
             "INFEASIBLE" if outcome.exhaustive else "HEURISTIC_FAILED")
         if outcome.assignment is not None:
+            basis = execution_profile_basis(option[1] for option in outcome.assignment.values())
             # Recheck the complete graph independently of strategy and pruning decisions.
             duration, demands, links, transfers = problem.evaluate(outcome.assignment, complete=True)
+            reused = problem.reused_instances(outcome.assignment)
+            cold_costs = {key: (problem.state.cold_setup_costs or {}).get(key, {}).get(
+                (outcome.assignment[key][0], outcome.assignment[key][1].implementation_id),
+                (outcome.assignment[key][1].effective_setup_ms, "profile_setup")) for key in problem.order}
             allocations = tuple(PlacementAllocation(
                 key, problem.match.bindings[key].cid, outcome.assignment[key][1].implementation_id,
-                f"{problem.task.task_id}:{key}", outcome.assignment[key][0],
+                reused[key].instance_id if key in reused else f"{problem.task.task_id}:{key}", outcome.assignment[key][0],
                 outcome.assignment[key][1].processor, outcome.assignment[key][1].demand,
-                outcome.assignment[key][1].runtime_p95_ms, outcome.assignment[key][1].setup_p95_ms)
+                outcome.assignment[key][1].runtime_p95_ms, outcome.assignment[key][1].effective_setup_ms,
+                device_id=problem.nodes[outcome.assignment[key][0]].device_id,
+                core_id=problem.nodes[outcome.assignment[key][0]].unit_index if outcome.assignment[key][1].processor == "dsp" else None,
+                region_id=problem.nodes[outcome.assignment[key][0]].unit_index if outcome.assignment[key][1].processor == "fpga" else None,
+                acquisition=reused[key].acquisition if key in reused else "cold_start",
+                estimated_acquisition_ms=reused[key].setup_ms if key in reused else cold_costs[key][0],
+                acquisition_cost_basis=reused[key].cost_basis if key in reused else cold_costs[key][1])
                 for key in problem.order)
             status = "UNVERIFIED_TIME" if limit is None else "FEASIBLE_ESTIMATE"
             if limit is None:
@@ -345,4 +436,4 @@ class PlacementPlanner:
         return PlacementPlan(problem.task.task_id, status, allocations, demands, links, transfers,
                              duration, limit, tuple(issues), outcome.explored, outcome.exhaustive,
                              algorithm, outcome.exhaustive and outcome.assignment is not None,
-                             problem.frame_count)
+                             problem.frame_count, profile_basis=basis)

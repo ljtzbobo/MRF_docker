@@ -16,6 +16,7 @@ from .radar.cfar_component import CFARComponent
 from .ew.spectrum_sensing_component import SpectrumSensingComponent
 from .ew.drfm_component import DRFMComponent
 from .rf.front_end import RFReceiveIQComponent, RFTransmitIQComponent
+from .rf.behavioral import RF_BEHAVIOR_COMPONENTS
 
 
 RUNTIME_COMPONENT_REGISTRY = {
@@ -25,6 +26,7 @@ RUNTIME_COMPONENT_REGISTRY = {
         PulseCompressionComponent, CFARComponent, SpectrumSensingComponent, DRFMComponent,
         RFReceiveIQComponent, RFTransmitIQComponent,
         DataLinkFrameVerifyComponent, DataLinkReassemblyComponent, IQMergeComponent,
+        *RF_BEHAVIOR_COMPONENTS,
     )
 }
 

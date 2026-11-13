@@ -51,7 +51,7 @@ class TaskService:
             document = validate_normalized_business_task(document)
         return match_task(document).to_dict()
 
-    def plan(self, document: dict) -> dict:
+    def plan(self, document: dict, *, keep_warm=False) -> dict:
         if document.get("schema_version") in ("external_rf_task.v1", "rf_task_representation.v1"):
             normalized = (parse_external_task(document)
                           if document["schema_version"] == "external_rf_task.v1"
@@ -62,6 +62,8 @@ class TaskService:
                 return {"task_id": refinement.task_id, "status": "UNMATCHED",
                         "match": match.to_dict()}
             if self.deployment is not None:
+                if keep_warm:
+                    return self.deployment.pool.preview(refinement.task, match).to_dict()
                 return self.deployment.scheduler.preview_placement(refinement.task, match).to_dict()
             used = ResourceUsage(**self.scheduler.snapshot()["used"])
             plan = self.scheduler.planner.plan(refinement.task, match,
@@ -112,7 +114,7 @@ class TaskService:
         return decision, result
 
     def execute_deployed(self, document: dict,
-                         frames: Mapping | list[Mapping]):
+                         frames: Mapping | list[Mapping], *, progress=None, keep_warm=False):
         """新规格任务的匹配、物理放置、提交、容器执行与释放入口。"""
         if self.deployment is None:
             raise RuntimeError("Docker deployment is not configured")
@@ -127,4 +129,6 @@ class TaskService:
         if refinement.task is None or match.status != "MATCHED":
             raise DeploymentError(f"task is not fully matched: {match.to_dict()}")
         sequence = [frames] if isinstance(frames, Mapping) else frames
-        return self.deployment.execute(refinement.task, match, sequence)
+        return self.deployment.execute(refinement.task, match, sequence,
+                                       **({'progress': progress} if progress is not None else {}),
+                                       **({'keep_warm': True} if keep_warm else {}))

@@ -1,5 +1,9 @@
 # 数据链接收的最小容器部署
 
+模块四第一阶段提供单后端全局实例池。执行传入 `keep_warm=true` 可跨任务复用 Warm 实例；缺省保留结束销毁行为。见 [模块四开发与验收](../docs/module4_implementation.md)。
+
+无需 Docker 或 DSP / FPGA 设备的模式见 [软件资源仿真](../docs/software_resource_simulation.md)。将 `MRF_DEPLOYMENT_CONFIG` 指向 `examples/ResourceSimulations/heterogeneous_simulation.json` 可使用现有 API 与前端；该模式使用进程内 Python 参考组件，不创建硬件容器。
+
 部署入口是 `TaskService.execute_deployed(请求, 帧序列)`，HTTP 入口是 `POST /api/v1/deployments/execute`。服务按当前业务规则细化请求、静态匹配完整规格 DAG，调用物理放置规划器预览并提交，然后按组件执行图的拓扑顺序启动容器、传输每帧数据，结束或失败时停止容器并释放调度预留。`POST /api/v1/plans` 在启用部署配置后返回同一物理放置器的预览。旧版任务仿真入口仍可独立使用。
 
 ## 部署配置
@@ -36,4 +40,8 @@ python -m examples.data_link_docker_demo --config deployment/config.local.json
 
 每个容器在内部 8765/TCP 提供 `GET /health` 和 `POST /process`。传输只发布到当前 Docker 主机的 `127.0.0.1` 随机端口。`/process` 请求为 `{"inputs": {"in": 数据包}}`，响应为 `{"output": 数据包}`；双输入组件使用 `left`、`right` 等命名端口。数据包包含 `dtype`、`shape`、`data_base64`、`sample_rate`、`center_frequency`、`timestamp`、`domain`、`metadata`，数组上限为 16 MiB。服务按执行图的端口边将前一容器输出转发到后一容器；跨帧会话复用同一容器实例以保留重组状态。
 
-当前部署器只支持一个本机 Docker 处理节点和 CPU 组件画像。跨主机传输、持久化恢复、硬件 DSP/FPGA 执行以及真实无线同步和信道均衡不在此闭环内。放置器的时限判断取决于提供的测量画像；HTTP、容器启动开销和多帧处理总耗时也需要在实际部署画像中测量。若容器启动后的清理或最终停止失败，调度预留会保留并报错，避免可能仍在运行的容器对应资源被重复分配；须人工核实并清理容器后再释放预留。
+当前部署器只支持一个本机 Docker 处理节点和 CPU 组件画像。跨主机传输、硬件 DSP/FPGA 执行以及真实无线同步和信道均衡不在此闭环内。放置器的时限判断取决于提供的测量画像；HTTP、容器启动开销和多帧处理总耗时也需要在实际部署画像中测量。若容器启动后的清理或最终停止失败，调度预留会保留并报错，避免可能仍在运行的容器对应资源被重复分配；须核实并确认清理后再释放预留。
+
+## 快照恢复与持久化接管
+
+Docker 后端支持可选 `checkpoint_store`、`pool_state` 配置。真实 CRIU 快照、独立 WSL 实验和单进程退出接管的运行说明见 [checkpoint_and_takeover.md](../docs/checkpoint_and_takeover.md)。软件仿真实例不能跨进程恢复。

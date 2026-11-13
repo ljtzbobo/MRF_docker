@@ -1,8 +1,9 @@
 # 多功能射频任务与波形组件调度原型
 
-本项目提供任务轻量化表征、公共 DAG 模板、组件静态匹配、归一化资源规划和实例生命周期仿真。原有 C01-C32 的静态定义和 OPS/OCS 规范均保留；新增 C33/C34 IQ 射频前端仿真组件，C04 AGC 已补运行实现，当前共 34 个静态定义与 15 个 CPU 参考实现。资源规划和实例状态属于仿真，不代表 FPGA/DSP 实测性能或真实 Docker 部署。
+本项目提供任务轻量化表征、公共 DAG 模板、组件静态匹配、归一化资源规划和实例生命周期仿真。原有 C01-C32 的静态定义和 OPS/OCS 规范均保留；新增 C33/C34 IQ 射频前端仿真组件，C04 AGC 已补运行实现，当前扩展至 49 个静态定义与 30 个可运行 CPU/行为参考模型；C38–C49 的新增范围与限制见 [射频行为模型](components/RF_BEHAVIORAL_MODELS.md)。资源规划和实例状态属于仿真，不代表 FPGA/DSP 实测性能或真实 Docker 部署。
 
 - [任务表征](task_repr/README.md)：任务模型、解析与公共模板。
+- [真实数据集目录规范](datasets/README.md)：三类业务数据、来源清单和任务场景的存放位置；当前只有目录与模板，尚未下载真实数据。原有七个业务 JSON 为合成接口测试。
 - [语音请求表征演示](examples/BusinessRequests/voice_transmit_request.json)：与其他外部射频任务共用解析入口，生成抽象功能图和 `S/Q/R/G/X`。
 - [任务表征可视化](task_repr/visualize.py)：绘制解析后的功能 DAG 与语义、约束、资源及状态。
 - [独立数据链业务流](examples/TrafficScenarios/README.md)：参考 MGEN 事件语法生成 2 秒持续流和短报文突发的逐包发送计划。

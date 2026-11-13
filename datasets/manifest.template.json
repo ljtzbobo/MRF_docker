@@ -1,0 +1,39 @@
+{
+  "schema_version": 1,
+  "is_template": true,
+  "dataset_id": null,
+  "domain": null,
+  "title": null,
+  "version": null,
+  "status": "not_downloaded",
+  "data_origin": "unknown",
+  "source_url": null,
+  "license": null,
+  "downloaded_at": null,
+  "raw_files": [],
+  "signal": {
+    "representation": null,
+    "container_format": null,
+    "dtype": null,
+    "endianness": null,
+    "iq_layout": null,
+    "sample_rate_hz": null,
+    "center_frequency_hz": null,
+    "channel_count": null,
+    "amplitude_units": null
+  },
+  "labels": {
+    "available": null,
+    "path": null,
+    "meaning": null,
+    "source": null
+  },
+  "references": [],
+  "processing": {
+    "adapter": null,
+    "parameters": {},
+    "output_directory": null,
+    "split_by": null
+  },
+  "notes": "Template only. Populate raw_files with path, bytes and sha256 after download. References identify documents, versions and sections; they are not signal recordings."
+}

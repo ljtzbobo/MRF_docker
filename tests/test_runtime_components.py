@@ -21,7 +21,8 @@ class RuntimeComponentTests(unittest.TestCase):
         self.assertEqual(
             set(RUNTIME_COMPONENT_REGISTRY),
             {"C03", "C04", "C05", "C07", "C08", "C09", "C14", "C15", "C17",
-             "C21", "C23", "C27", "C32", "C33", "C34", "C35", "C36", "C37"},
+             "C21", "C23", "C27", "C32", "C33", "C34", "C35", "C36", "C37"}
+            | {f'C{i}' for i in range(38,50)},
         )
 
     def test_ddc_mixes_a_tone_to_baseband(self):

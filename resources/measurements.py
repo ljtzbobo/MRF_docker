@@ -1,9 +1,18 @@
-"""按硬件和组件配置保存实测执行画像，单位不与仿真等级混用。"""
+"""带来源的执行画像；支持实测与显式 synthetic 模型，单位不与归一化等级混用。"""
 
 from dataclasses import MISSING, asdict, dataclass
 import json
 import math
 from pathlib import Path
+
+
+def execution_profile_basis(profiles):
+    scopes = {item.timing_scope for item in profiles}
+    if scopes == {"synthetic"}:
+        return "synthetic"
+    if "synthetic" in scopes:
+        return "mixed"
+    return "unspecified" if not scopes or "unspecified" in scopes else "measured"
 
 
 @dataclass(frozen=True)
@@ -13,11 +22,34 @@ class PhysicalUsage:
     bandwidth_bytes_per_s: float = 0.0
     dsp_units: float = 0.0
     fpga_units: float = 0.0
+    dsp_compute_mcycles_per_s: float = 0.0
+    dsp_local_memory_bytes: float = 0.0
+    fpga_lut: float = 0.0
+    fpga_ff: float = 0.0
+    fpga_dsp48: float = 0.0
+    fpga_bram36: float = 0.0
+
+
+LEGACY_USAGE_FIELDS = {"cpu_millicores", "memory_bytes", "bandwidth_bytes_per_s", "dsp_units", "fpga_units"}
+FPGA_FIELDS = ("fpga_lut", "fpga_ff", "fpga_dsp48", "fpga_bram36")
+DSP_FIELDS = ("dsp_units", "dsp_compute_mcycles_per_s", "dsp_local_memory_bytes")
+
+
+def validate_processor_demand(processor, demand):
+    dsp = any(getattr(demand, key) > 0 for key in DSP_FIELDS)
+    fpga = demand.fpga_units > 0 or any(getattr(demand, key) > 0 for key in FPGA_FIELDS)
+    primary = {"cpu": demand.cpu_millicores > 0,
+               "dsp": demand.dsp_units > 0 or demand.dsp_compute_mcycles_per_s > 0,
+               "fpga": fpga}[processor]
+    if not primary or (processor != "dsp" and dsp) or (processor != "fpga" and fpga):
+        raise ValueError("measurement has inconsistent processor demand")
 
 
 def _validate_usage(usage: PhysicalUsage) -> None:
     for name, value in asdict(usage).items():
         _number(value, name)
+        if name in FPGA_FIELDS and value != int(value):
+            raise ValueError(f"{name} must count whole hardware resources")
 
 
 @dataclass(frozen=True)
@@ -63,8 +95,14 @@ class ComponentMeasurement:
     source: str
     timing_scope: str = "unspecified"
     setup_sample_count: int = 1
+    tuning_setup_ms: float = 0.0
+
+    @property
+    def effective_setup_ms(self):
+        return self.setup_p95_ms + self.tuning_setup_ms
 
     def __post_init__(self) -> None:
+        _number(self.tuning_setup_ms, 'tuning_setup_ms')
         if self.timing_scope not in ("unspecified", "component_process", "docker_http_roundtrip", "synthetic"):
             raise ValueError("unknown measurement timing_scope")
         if type(self.setup_sample_count) is not int or self.setup_sample_count < 1:
@@ -80,10 +118,7 @@ class ComponentMeasurement:
                 len(set(self.required_features)) != len(self.required_features)):
             raise ValueError("measurement parameters and required_features must be valid")
         _validate_usage(self.demand)
-        primary = {"cpu": self.demand.cpu_millicores, "dsp": self.demand.dsp_units,
-                   "fpga": self.demand.fpga_units}[self.processor]
-        if primary <= 0 or (self.processor != "dsp" and self.demand.dsp_units) or (self.processor != "fpga" and self.demand.fpga_units):
-            raise ValueError("measurement has inconsistent processor demand")
+        validate_processor_demand(self.processor, self.demand)
         _number(self.runtime_p95_ms, "runtime_p95_ms", positive=True)
         _number(self.setup_p95_ms, "setup_p95_ms")
         for name in ("input_bytes", "output_bytes", "sample_count"):
@@ -115,16 +150,18 @@ def _number(value, name: str, *, positive: bool = False) -> float:
 
 def _usage(raw: dict) -> PhysicalUsage:
     keys = set(PhysicalUsage.__dataclass_fields__)
-    if not isinstance(raw, dict) or set(raw) != keys:
-        raise ValueError(f"demand must contain exactly {sorted(keys)}")
-    return PhysicalUsage(**{key: _number(raw[key], key) for key in keys})
+    if not isinstance(raw, dict) or set(raw) not in (keys, LEGACY_USAGE_FIELDS):
+        raise ValueError(f"demand must contain the legacy five or all {len(keys)} resource fields")
+    result = PhysicalUsage(**{key: _number(raw[key], key) for key in raw})
+    _validate_usage(result)
+    return result
 
 
 def load_measurements(path: str | Path) -> MeasurementCatalog:
     """只接收有来源、样本数和精确参数的标定记录。"""
     raw = json.loads(Path(path).read_text(encoding="utf-8"))
-    if not isinstance(raw, dict) or set(raw) != {"schema_version", "profiles"} or type(raw["schema_version"]) is not int or raw["schema_version"] != 1 or not isinstance(raw["profiles"], list):
-        raise ValueError("measurement catalog requires schema_version 1 and profiles array")
+    if not isinstance(raw, dict) or set(raw) != {"schema_version", "profiles"} or type(raw["schema_version"]) is not int or raw["schema_version"] not in (1, 2) or not isinstance(raw["profiles"], list):
+        raise ValueError("measurement catalog requires schema_version 1 or 2 and profiles array")
     fields = ComponentMeasurement.__dataclass_fields__
     required = {key for key, field in fields.items() if field.default is MISSING}
     profiles = []
@@ -143,10 +180,9 @@ def load_measurements(path: str | Path) -> MeasurementCatalog:
         if not isinstance(row["parameters"], dict):
             raise ValueError(f"profiles[{index}].parameters must be an object")
         demand = _usage(row["demand"])
-        primary = {"cpu": demand.cpu_millicores, "dsp": demand.dsp_units,
-                   "fpga": demand.fpga_units}[row["processor"]]
-        if primary <= 0 or (row["processor"] != "dsp" and demand.dsp_units) or (row["processor"] != "fpga" and demand.fpga_units):
-            raise ValueError(f"profiles[{index}] has inconsistent processor demand")
+        if raw["schema_version"] == 2 and set(row["demand"]) != set(PhysicalUsage.__dataclass_fields__):
+            raise ValueError("schema 2 requires all resource dimensions")
+        validate_processor_demand(row["processor"], demand)
         times = {key: _number(row[key], key, positive=key == "runtime_p95_ms")
                  for key in ("runtime_p95_ms", "setup_p95_ms")}
         for key in ("input_bytes", "output_bytes", "sample_count"):
@@ -159,13 +195,16 @@ def load_measurements(path: str | Path) -> MeasurementCatalog:
             demand=demand, input_bytes=row["input_bytes"], output_bytes=row["output_bytes"],
             sample_count=row["sample_count"], source=row["source"],
             timing_scope=row.get("timing_scope", "unspecified"),
-            setup_sample_count=row.get("setup_sample_count", 1), **times))
+            setup_sample_count=row.get("setup_sample_count", 1),
+            tuning_setup_ms=row.get("tuning_setup_ms", 0), **times))
     return MeasurementCatalog(tuple(profiles))
 
 
 def save_measurements(path: str | Path, catalog: MeasurementCatalog) -> None:
     """Write version 1 catalogs, including optional measurement scope metadata."""
-    Path(path).write_text(json.dumps({"schema_version": 1,
+    extended = any(getattr(p.demand, key) for p in catalog.profiles
+                   for key in set(PhysicalUsage.__dataclass_fields__) - LEGACY_USAGE_FIELDS)
+    Path(path).write_text(json.dumps({"schema_version": 2 if extended else 1,
                                     "profiles": [asdict(item) for item in catalog.profiles]},
                                    ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
 
@@ -173,7 +212,7 @@ def save_measurements(path: str | Path, catalog: MeasurementCatalog) -> None:
 def load_physical_hardware(path: str | Path) -> PhysicalHardwareProfile:
     """读取带明确单位的设备容量，不从 0–100 等级换算。"""
     raw = json.loads(Path(path).read_text(encoding="utf-8"))
-    if not isinstance(raw, dict) or set(raw) != {"schema_version", "hardware_id", "capacity", "features"} or type(raw["schema_version"]) is not int or raw["schema_version"] != 1:
+    if not isinstance(raw, dict) or set(raw) != {"schema_version", "hardware_id", "capacity", "features"} or type(raw["schema_version"]) is not int or raw["schema_version"] not in (1, 2):
         raise ValueError("physical hardware requires schema_version 1, hardware_id, capacity and features")
     if not isinstance(raw["hardware_id"], str) or not raw["hardware_id"].strip():
         raise ValueError("hardware_id must be nonempty")
@@ -181,4 +220,6 @@ def load_physical_hardware(path: str | Path) -> PhysicalHardwareProfile:
     if (not isinstance(features, list) or any(not isinstance(item, str) or not item for item in features)
             or len(set(features)) != len(features)):
         raise ValueError("features must be unique nonempty strings")
+    if raw["schema_version"] == 2 and set(raw["capacity"]) != set(PhysicalUsage.__dataclass_fields__):
+        raise ValueError("schema 2 requires all resource dimensions")
     return PhysicalHardwareProfile(raw["hardware_id"], _usage(raw["capacity"]), tuple(features))
