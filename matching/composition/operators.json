@@ -1,0 +1,16 @@
+{
+  "C03": {"kind":"ddc", "automatic":true, "parameters":{"decimation":"decimation", "nco_frequency_mhz":"nco_frequency_mhz"}},
+  "C04": {"kind":"preserve", "parameters":{}},
+  "C05": {"kind":"preserve", "parameters":{"cutoff":"filter_cutoff"}},
+  "C07": {"kind":"declared", "parameters":{}},
+  "C08": {"kind":"fft", "mode":"fft", "parameters":{"fft_size":"fft_length"}},
+  "C09": {"kind":"declared", "parameters":{}},
+  "C14": {"kind":"declared", "parameters":{}},
+  "C15": {"kind":"declared", "parameters":{}},
+  "C17": {"kind":"declared", "parameters":{}},
+  "C21": {"kind":"declared", "parameters":{}},
+  "C23": {"kind":"declared", "parameters":{}},
+  "C27": {"kind":"psd", "parameters":{"fft_length":"fft_length", "overlap":"overlap"}},
+  "C46": {"kind":"adc", "parameters":{}},
+  "C47": {"kind":"dac", "parameters":{}}
+}

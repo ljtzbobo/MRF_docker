@@ -17,6 +17,26 @@ def example(name):
 
 
 class ExternalTaskTests(unittest.TestCase):
+    def test_demand_graphs_are_valid_unbound_representations(self):
+        spectrum=example('07_spectrum_analysis.json')
+        spectrum['request']['processing'].pop('profile')
+        functional=copy.deepcopy(spectrum)
+        functional['request']['functional_dag']={'nodes':[
+            {'id':'psd','capability':'fast_spectrum_sensing'}],'edges':[]}
+        voice=example('01_voice_communication.json')
+        voice['expected_output']=['speech_transcript']
+        satellite=example('06_signal_identification.json')
+        satellite['expected_output']=['satellite_identity']
+        radar=example('03_target_search.json')
+        radar['data_input']['format']='radar/range_pulse_matrix'
+        for raw in (spectrum,functional,voice,satellite,radar):
+            with self.subTest(task=raw['task_type'],outputs=raw['expected_output']):
+                result=represent_external_task(raw)
+                graph=result['task_representation']['G']
+                self.assertEqual(graph['generation_status'],'abstract_only_requires_refinement')
+                self.assertEqual(graph['component_bindings'],[])
+                self.assertEqual(result['task_representation'],parse_external_task(raw))
+
     def test_six_external_tasks_keep_business_constraints(self):
         for source in sorted(INPUTS.glob("0*.json")):
             with self.subTest(task=source.name):
@@ -133,7 +153,7 @@ class ExternalTaskTests(unittest.TestCase):
         match_response = client.post("/api/v1/matches",
                                      json=response.json()["task_representation"])
         self.assertEqual(match_response.status_code, 200)
-        self.assertEqual(match_response.json()["status"], "NEEDS_REFINEMENT")
+        self.assertEqual(match_response.json()["status"], "NEEDS_PARAMETERS")
         collection = client.post("/api/v1/task-representations/external",
                                  json=example("all_tasks.json"))
         self.assertEqual(collection.status_code, 200)

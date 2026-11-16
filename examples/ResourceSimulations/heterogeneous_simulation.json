@@ -2,6 +2,10 @@
   "schema_version": 2,
   "mode": "software_simulation",
   "reference_model": "66AK2H06-XC7K410T-v1",
+  "transfer_policy": {
+    "bytes_per_item": {"iq/complex": 16, "iq/baseband": 16, "time/complex": 16, "frequency/complex": 16, "spectrum/psd": 8},
+    "reserved_bytes_per_s": 100000000
+  },
   "nodes": [
     {
       "node_id": "sim-cpu",

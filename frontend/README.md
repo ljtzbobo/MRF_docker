@@ -28,3 +28,7 @@ npm run dev
 已生成的 `rf_task_representation.v1` 五元组和公共模板仍可导入，用于复查或恢复已有表征；它们不是编写仿真任务的前置条件。`python -m examples.generate_data_link_upload` 生成可上传的数据链接收原始请求、表征及输入帧，位于 `public/samples/`。
 
 输入帧是非空数组，每项以执行图的入口节点 ID 为键，值为 `deployment.protocol.encode_packet()` 格式的数据包。仅当容器部署已配置、任务为 `MATCHED`、物理分配为 `FEASIBLE_ESTIMATE` 且输入帧已通过校验时，页面才允许提交。后端会在提交时再次匹配和预览，处理期间资源状态可能变化。执行结束显示结果或错误，并刷新资源占用。
+
+## 数据集任务生成
+
+任务页新增真实数据集生成器。API 重启并执行 `python -m datasets scan --hash` 后，可选择场景、记录、窗口和时限，生成外部任务并载入模块一。完整匹配和规划可行后，原“提交执行”按钮改由后端适配器读取数据，浏览器不接收原始 IQ/录音。雷达描述、航空语音识别和卫星身份识别尚无配套执行链时会明确显示待细化。详见 [datasets](../datasets/README.md)。

@@ -102,6 +102,14 @@ class DAGExecutor:
         self.execution_order = tuple(order)
         self.roots = tuple(node_id for node_id in order if not self._incoming[node_id])
         self.sinks = tuple(node_id for node_id in order if not self._outgoing[node_id])
+        self._external_ports={}
+        if isinstance(task,SpecificationTask):
+            for boundary in task.G.boundaries:
+                if boundary['direction']=='source' and boundary.get('node_id') in self._nodes:
+                    self._external_ports.setdefault(boundary['node_id'],[]).append(boundary['port'])
+            self.roots=tuple(node for node in order if node in self.roots or node in self._external_ports)
+            exposed={b['node_id'] for b in task.G.boundaries if b['direction']=='sink' and b.get('node_id') in self._nodes}
+            if exposed:self.sinks=tuple(node for node in order if node in exposed)
 
         unknown = set(bindings) - self._nodes.keys()
         if unknown:
@@ -278,12 +286,14 @@ class DAGExecutor:
         return self._execute_frame(sources, _components=_components)
 
     def _collect_inputs(self, node_id, sources, outputs):
+        packets={edge.target_port:outputs[edge.source] for edge in self._incoming[node_id]}
         if node_id in self.roots:
             supplied = sources[node_id]
-            return (supplied if isinstance(supplied, Mapping) else
-                    {next(iter(self._nodes[node_id].inputs)): supplied})
-        return {edge.target_port: outputs[edge.source]
-                for edge in self._incoming[node_id]}
+            external=(supplied if isinstance(supplied,Mapping) else
+                {next(iter(self._external_ports.get(node_id,self._nodes[node_id].inputs))):supplied})
+            if packets.keys() & external.keys():raise DAGExecutionError('external source overlaps an internally connected port')
+            packets.update(external)
+        return packets
 
     def _validate_inputs(self, node_id, packets):
         if set(packets) != set(self._nodes[node_id].inputs):

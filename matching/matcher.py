@@ -71,6 +71,9 @@ class StaticMatchResult:
     candidates_exhaustive: bool = True
     execution_graph: dict | None = None
     candidate_execution_graphs: tuple[dict, ...] = ()
+    specification_task: SpecificationTask | None = None
+    composition: dict | None = None
+    candidate_compositions: tuple = ()
 
     def to_dict(self) -> dict:
         result = {"task_id": self.task_id, "status": self.status,
@@ -88,6 +91,9 @@ class StaticMatchResult:
         if self.execution_graph is not None:
             result["execution_graph"] = self.execution_graph
             result["candidate_execution_graphs"] = list(self.candidate_execution_graphs)
+        if self.composition is not None:result['composition']=self.composition
+        if self.candidate_compositions:
+            result['candidate_compositions']=[item.to_dict() for item in self.candidate_compositions]
         return result
 
 
@@ -136,7 +142,7 @@ def _build_execution_graph(task: SpecificationTask, bindings: dict[str, Componen
     for boundary in task.G.boundaries:
         direction = boundary["direction"]
         candidates = [node for node in nodes.values()
-                      if not (incoming if direction == "source" else outgoing)[node.node_id]
+                      if ("node_id" in boundary or not (incoming if direction == "source" else outgoing)[node.node_id])
                       and ("node_id" not in boundary or boundary["node_id"] == node.node_id)
                       and boundary["format"] in (node.inputs if direction == "source" else node.outputs).values()]
         if len(candidates) != 1:
@@ -263,7 +269,7 @@ def _load_task(task):
     raise TypeError("task must be a TaskRepresentation, JSON path or task mapping")
 
 
-def match_task(task, capability_map: CapabilityMap | None = None,
+def _match_fixed(task, capability_map: CapabilityMap | None = None,
                *, max_solutions: int = 1) -> StaticMatchResult:
     """筛选可运行组件并校验 DAG 连接，返回绑定及未解决的问题。"""
     if type(max_solutions) is not int or max_solutions < 1:
@@ -296,23 +302,8 @@ def match_task(task, capability_map: CapabilityMap | None = None,
         for mapping in candidates:
             try:
                 # 构造组件只用于验证参数和端口；静态匹配阶段不处理 DataPacket。
-                parameters = adapt_parameters(task, node, mapping.cid)
-                interface = interfaces.get(mapping.cid)
-                if interface is None:
-                    raise MatchRuleError("UNSUPPORTED", f"no OCS for {mapping.cid}")
-                required_error = interface.check_required(parameters)
-                if required_error:
-                    raise MatchRuleError("NEEDS_PARAMETERS", required_error)
-                for name, value in parameters.items():
-                    property_error = interface.check_property(name, value)
-                    if property_error:
-                        raise MatchRuleError("INVALID_PARAMETERS", property_error)
-                component = create_runtime_component(mapping.cid, **parameters)
-                candidate = _Candidate(ComponentBinding(mapping.cid, parameters), component)
-                port_error = check_node_ports(node, component, interface, protocols, parameters)
-                if port_error:
-                    raise MatchRuleError("INTERFACE_MISMATCH", port_error)
-                _signal_checks(task, node, candidate)
+                from .candidate_builder import validate_candidate
+                candidate=validate_candidate(task,node,mapping.cid,interfaces,protocols)
                 feasible.append(candidate)
             except MatchRuleError as exc:
                 failures.append(MatchIssue(exc.code, str(exc), node.node_id, mapping.cid))
@@ -352,6 +343,7 @@ def match_task(task, capability_map: CapabilityMap | None = None,
             if best is None:
                 best, best_issues = trial, []
             if max_solutions == 1:
+                candidates_exhaustive = all(len(items)==1 for items in options.values())
                 break
     if best is None:
         for combination in itertools.product(*(options[node_id] for node_id in active)):
@@ -389,4 +381,20 @@ def match_task(task, capability_map: CapabilityMap | None = None,
             status = "PARTIAL"
     return StaticMatchResult(task.task_id, status, bindings, edges, issues, refined_graph,
                              tuple(solutions) if max_solutions > 1 and status == "MATCHED" else (),
-                             candidates_exhaustive, execution_graph, candidate_graphs)
+                             candidates_exhaustive, execution_graph, candidate_graphs,
+                             task if isinstance(task,SpecificationTask) else None)
+
+
+def match_task(task,capability_map=None,*,max_solutions=1,composition_limits=None):
+    """Business requests use demand assembly; existing explicit specification DAGs retain static matching."""
+    if type(max_solutions) is not int or max_solutions<1:raise ValueError('max_solutions must be positive')
+    if isinstance(task,(str,Path)):
+        return match_task(json.loads(Path(task).read_text(encoding='utf-8')),capability_map,
+            max_solutions=max_solutions,composition_limits=composition_limits)
+    if isinstance(task,Mapping):
+        if task.get('schema_version')=='external_rf_task.v1':task=parse_external_task(task)
+        if task.get('schema_version')=='rf_task_representation.v1':
+            from .composition import compose_business_task
+            return compose_business_task(task,capability_map=capability_map,
+                max_solutions=max(4,max_solutions),limits=composition_limits)
+    return _match_fixed(task,capability_map,max_solutions=max_solutions)

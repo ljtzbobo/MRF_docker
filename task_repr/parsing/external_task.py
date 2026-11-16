@@ -44,6 +44,55 @@ def _resource_template() -> dict:
 
 def _graph(task: dict, rule: dict) -> dict:
     graph = copy.deepcopy(TEMPLATE["G"])
+    # Every generated branch is an unbound business graph, including early returns.
+    graph["generation_status"] = "abstract_only_requires_refinement"
+    request=task['request']
+    explicit=request.get('functional_dag')
+    if explicit is not None:
+        _check(isinstance(explicit,dict) and set(explicit)=={'nodes','edges'},'functional_dag requires nodes and edges')
+        _check(isinstance(explicit['nodes'],list) and explicit['nodes'] and isinstance(explicit['edges'],list),'invalid functional DAG arrays')
+        identifiers=set()
+        for node in explicit['nodes']:
+            _check(isinstance(node,dict) and {'id','capability'}<=set(node) and not set(node)-{'id','capability','parameters','input_format','output_format'},'invalid functional requirement fields; CID bindings are not task requirements')
+            _nonempty(node['id'],'functional node id');_nonempty(node['capability'],'functional capability')
+            _check(node['id'] not in identifiers,'duplicate functional node id');identifiers.add(node['id'])
+            _check(isinstance(node.get('parameters',{}),dict),'functional parameters must be an object')
+            graph['nodes'].append(dict(id=node['id'],role=node['capability'],canonical_role=node['capability'],binding_status='abstract_function_only'))
+        for edge in explicit['edges']:
+            _check(isinstance(edge,dict) and {'source','target'}<=set(edge) and not set(edge)-{'source','target','target_port'},'invalid functional dependency')
+            _check(edge['source'] in identifiers and edge['target'] in identifiers,'functional dependency references unknown node')
+            if 'target_port' in edge:_nonempty(edge['target_port'],'target_port')
+            graph['edges'].append(dict(source=edge['source'],target=edge['target']))
+        targets=[(e['target'],e['target_port']) for e in explicit['edges'] if 'target_port' in e]
+        _check(len(set(targets))==len(targets),'functional input port has multiple dependencies')
+        pending={identifier:0 for identifier in identifiers}
+        for edge in explicit['edges']:pending[edge['target']]+=1
+        ready=[identifier for identifier,count in pending.items() if count==0];visited=0
+        while ready:
+            identifier=ready.pop();visited+=1
+            for edge in explicit['edges']:
+                if edge['source']==identifier:
+                    pending[edge['target']]-=1
+                    if pending[edge['target']]==0:ready.append(edge['target'])
+        _check(visited==len(identifiers),'functional DAG contains a cycle')
+        return graph
+    # Business goals for newly described signals do not require an algorithm profile.
+    outputs=task['expected_output'];processing=request.get('processing',{})
+    goals=None
+    if task['task_type']=='spectrum_analysis' and 'profile' not in processing:
+        goals=['acquire_signal']
+        if processing.get('decimation',1)!=1 or processing.get('nco_frequency_mhz',0)!=0:goals.append('downconvert_iq')
+        if 'filter_cutoff' in processing or 'coefficients' in processing:goals.append('filter_signal')
+        goals+=['estimate_spectrum','deliver_spectrum']
+    elif 'speech_transcript' in outputs:goals=['acquire_signal','recognize_speech','deliver_text']
+    elif 'satellite_identity' in outputs:goals=['acquire_signal','identify_satellite','deliver_identity']
+    elif task['data_input'].get('format')=='radar/range_pulse_matrix':goals=['acquire_signal','detect_targets','deliver_detections']
+    if goals is not None:
+        for i,role in enumerate(goals,1):
+            identifier=f'main-{i:02d}'
+            graph['nodes'].append(dict(id=identifier,role=role,canonical_role=role,binding_status='abstract_function_only'))
+            if i>1:graph['edges'].append(dict(source=f'main-{i-1:02d}',target=identifier))
+        return graph
     direction = task["direction"]
     branches = rule["branches"]
     selected = ["main"] if "main" in branches else (["tx", "rx"] if direction == "tx_rx" else [direction])
@@ -61,7 +110,6 @@ def _graph(task: dict, rule: dict) -> dict:
             if prev is not None:
                 graph["edges"].append({"source": prev, "target": node_id})
             prev = node_id
-    graph["generation_status"] = "abstract_only_requires_refinement"
     graph["unresolved_information"] = list(rule["open_questions"])
     if direction == "tx_rx" and task["data_input"]["kind"] == "application_audio_stream":
         # 示例只给出上行的业务音频数据引用；不能虚构下行接收源。

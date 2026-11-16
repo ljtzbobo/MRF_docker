@@ -1,0 +1,16 @@
+{
+  "schema_version": "rf_dataset_scenario.v1",
+  "scenario_id": "iridium_identification",
+  "title": "Iridium 卫星辐射源身份识别需求",
+  "description": "使用真实独立突发提出卫星个体识别任务；不将参考分类器伪装成训练好的 66 类模型。",
+  "input_representation": "complex_iq",
+  "frequency_range_hz": [1616000000, 1626500000],
+  "task_type": "signal_identification",
+  "family": "electronic_support",
+  "direction": "rx",
+  "request": {"observation_id": "bound_dataset_observation", "candidate_signal_families": ["Iridium"], "unknown_class_allowed": true},
+  "expected_output": ["satellite_identity"],
+  "builder": "business_only",
+  "defaults": {"frame_length": 3000, "frame_count": 1, "observation_index": 0, "priority": 6, "arrival_ms": 0, "deadline_after_ms": 1000},
+  "limitations": ["模块一可表征该任务；现有参考分类器未训练成 66 类卫星个体模型，执行链仍待补齐。", "标签作为独立评测参考，不注入组件输入元数据。"]
+}

@@ -1,0 +1,15 @@
+{
+  "schema_version": "rf_dataset_scenario.v1",
+  "scenario_id": "radar_search",
+  "title": "真实雷达回波矩阵的弱小目标搜索需求",
+  "description": "以给定脉冲区间和对应距离波门、真值引用构建搜索任务。当前仅表征，尚不将该矩阵送入原始 IQ 的 LFM 链。",
+  "input_representation": "radar_range_pulse_matrix",
+  "task_type": "target_search",
+  "family": "radar",
+  "direction": "rx",
+  "request": {"search_volume": {"definition":"source_recorded_range_gates", "dimension":"range_radial_velocity"}, "range_resolution_requirement_m":10, "scan_revisit_interval_ms":50},
+  "expected_output": ["target_detections"],
+  "builder": "radar_business",
+  "defaults": {"frame_length":256, "frame_count":1, "priority":7, "arrival_ms":0, "deadline_after_ms":1000},
+  "limitations": ["起始索引与每帧长度单位为慢时间脉冲，不是原始 RF 样点；PRF 32 kHz 不等于 ADC 采样率。", "业务分辨率 10 m 和重访 50 ms 是本场景要求；1.875 m 是数据距离单元间隔，两者职责不同。", "距离波门校正与配套检测跟踪链尚未接入，当前只生成外部任务；地基采集数据不宣称来自 E-3。"]
+}

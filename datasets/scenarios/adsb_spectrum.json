@@ -1,0 +1,16 @@
+{
+  "schema_version": "rf_dataset_scenario.v1",
+  "scenario_id": "adsb_spectrum",
+  "title": "1090 MHz 航空广播记录的频谱分析",
+  "description": "分析用户指定的 ADS-B 频段记录的功率谱；不执行 Mode-S/ADS-B 报文解码。",
+  "input_representation": "complex_iq",
+  "frequency_range_hz": [1086000000, 1094000000],
+  "task_type": "spectrum_analysis",
+  "family": "electronic_support",
+  "direction": "rx",
+  "request": {},
+  "expected_output": ["spectrum_psd"],
+  "builder": "ddc_fir_psd",
+  "defaults": {"frame_length": 4096, "frame_count": 3, "decimation": 2, "nco_frequency_hz": 100000, "filter_cutoff": 0.25, "fft_length": 1024, "overlap": 0.5, "priority": 6, "arrival_ms": 0, "deadline_after_ms": 1000},
+  "limitations": ["无 ADS-B 报文解调器和航空器字段解析器，频谱结果不等于报文解码。", "默认频移、抽取和滤波参数是场景实验选择，采样率与中心频率来自数据元信息。"]
+}

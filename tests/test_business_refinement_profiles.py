@@ -102,7 +102,7 @@ class BusinessRefinementProfileTests(unittest.TestCase):
 
     def test_missing_profile_and_parameters_are_distinct_from_unsupported(self):
         raw = source("03_target_search.json")
-        self.assertEqual(match_task(raw).status, "NEEDS_REFINEMENT")
+        self.assertEqual(match_task(raw).status, "NEEDS_PARAMETERS")
         raw = configured_request("03_target_search.json")
         del raw["request"]["processing"]["reference_waveform"]
         result = match_task(raw)

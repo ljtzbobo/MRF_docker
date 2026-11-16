@@ -1,0 +1,15 @@
+{
+  "schema_version": "rf_dataset_scenario.v1",
+  "scenario_id": "iq_spectrum",
+  "title": "已标定 IQ 记录的频谱分析",
+  "description": "显式选定 IQ 记录并配置 DDC、FIR 与 PSD 参数。",
+  "input_representation": "complex_iq",
+  "task_type": "spectrum_analysis",
+  "family": "electronic_support",
+  "direction": "rx",
+  "request": {},
+  "expected_output": ["spectrum_psd"],
+  "builder": "ddc_fir_psd",
+  "defaults": {"frame_length": 4096, "frame_count": 3, "decimation": 2, "nco_frequency_hz": 100000, "filter_cutoff": 0.25, "fft_length": 1024, "overlap": 0.5, "priority": 6, "arrival_ms": 0, "deadline_after_ms": 1000},
+  "limitations": ["数据集提供信号输入；场景实验参数决定处理业务，不从文件名推导调制方式或任务。"]
+}

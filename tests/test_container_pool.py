@@ -32,8 +32,15 @@ class ContainerPoolTests(unittest.TestCase):
     def test_cross_task_reuse_resets_components_and_preserves_output(self):
         first = self.execute('first')
         old_objects = {k: value[1] for k,value in self.manager.runtime.instances.items()}
-        with patch.object(self.manager.runtime, 'start', wraps=self.manager.runtime.start) as start:
-            second = self.execute('second')
+        fixed = {a.node_id:a.processing_node_id for a in first.plan.allocations}
+        estimate = self.manager.pool.costs.estimate
+        # This case verifies Warm reset/output isolation. Keep action costs controlled
+        # so host-load fluctuations cannot choose a different cold implementation.
+        def reuse_cost(key,action,fallback):
+            return (100,'test_controlled_cold_cost') if action=='cold_start' else estimate(key,action,fallback)
+        with patch.object(self.manager.pool.costs,'estimate',side_effect=reuse_cost), \
+                patch.object(self.manager.runtime, 'start', wraps=self.manager.runtime.start) as start:
+            second = self.execute('second',fixed=fixed)
             self.assertEqual(start.call_count, 0)
         self.assertEqual([a.container_unit_id for a in first.plan.allocations],
                          [a.container_unit_id for a in second.plan.allocations])

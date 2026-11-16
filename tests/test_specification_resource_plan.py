@@ -95,7 +95,7 @@ class SpecificationResourcePlanTests(unittest.TestCase):
         self.assertEqual(service.plan({**raw, "task_type": "spectrum_analysis",
                                        "request": {**raw["request"], "processing": {
                                            **raw["request"]["processing"],
-                                           "profile": "unknown"}}})["status"], "UNMATCHED")
+                                           "profile": "unknown"}}})["status"], "UNVERIFIED_TIME")
 
     def test_service_uses_current_scheduler_resource_state(self):
         raw, _, _ = business_task()

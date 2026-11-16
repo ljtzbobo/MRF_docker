@@ -3,7 +3,7 @@
 本项目提供任务轻量化表征、公共 DAG 模板、组件静态匹配、归一化资源规划和实例生命周期仿真。原有 C01-C32 的静态定义和 OPS/OCS 规范均保留；新增 C33/C34 IQ 射频前端仿真组件，C04 AGC 已补运行实现，当前扩展至 49 个静态定义与 30 个可运行 CPU/行为参考模型；C38–C49 的新增范围与限制见 [射频行为模型](components/RF_BEHAVIORAL_MODELS.md)。资源规划和实例状态属于仿真，不代表 FPGA/DSP 实测性能或真实 Docker 部署。
 
 - [任务表征](task_repr/README.md)：任务模型、解析与公共模板。
-- [真实数据集目录规范](datasets/README.md)：三类业务数据、来源清单和任务场景的存放位置；当前只有目录与模板，尚未下载真实数据。原有七个业务 JSON 为合成接口测试。
+- [数据集任务生成器](datasets/README.md)：来源登记、独立场景和懒加载适配器；以已下载的 ADS-B、Iridium、ATCO2 与雷达记录构造外部任务，ADS-B/Iridium 频谱链已验证。原七个业务 JSON 保留为合成接口测试。
 - [语音请求表征演示](examples/BusinessRequests/voice_transmit_request.json)：与其他外部射频任务共用解析入口，生成抽象功能图和 `S/Q/R/G/X`。
 - [任务表征可视化](task_repr/visualize.py)：绘制解析后的功能 DAG 与语义、约束、资源及状态。
 - [独立数据链业务流](examples/TrafficScenarios/README.md)：参考 MGEN 事件语法生成 2 秒持续流和短报文突发的逐包发送计划。
@@ -74,6 +74,8 @@ for candidate in candidates:
 查询只返回候选；静态匹配还需检查节点参数、输入输出数据域和端口格式，以及运行实现，才能输出可行绑定。资源约束属于后续调度阶段。表中 `fir_filter`、`iir_filter`、`known_preamble_frame_synchronization`、`fft`、`ifft`、`ofdm_tx`、`ofdm_rx`、`iq_delay_replay` 是供后续任务模板使用的明确能力 ID。
 
 ## 静态匹配
+
+业务任务现在通过[需求驱动组件装配](docs/module2_demand_composition.md)生成组件 DAG：保留能力、参数、OPS/OCS 规则，以回溯和分支限界搜索组合。新频谱任务及显式 `request.functional_dag` 不依赖预设链；旧协议演示保留兼容入口。`composition` 返回搜索范围、结构代价、候选数量和是否达到搜索上限。
 
 ```powershell
 python -m examples.static_match_demo

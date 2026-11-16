@@ -23,7 +23,7 @@ def load_resource_simulation(path):
     version = raw.get("schema_version") if isinstance(raw, dict) else None
     if version == 2:
         required.add("reference_model")
-    if (not isinstance(raw, dict) or set(raw) != required or
+    if (not isinstance(raw, dict) or not required<=set(raw) or set(raw)-required-{'transfer_policy'} or
             type(version) is not int or version not in (1, 2) or
             raw["mode"] != "software_simulation"):
         raise ValueError("simulation requires schema_version 1 or 2 and explicit software_simulation mode")
@@ -67,7 +67,7 @@ def load_resource_simulation(path):
                     profile.demand.dsp_units or profile.demand.fpga_units):
                 raise ValueError("reference profiles must match processor and use explicit core/region dimensions")
     planner = PlacementPlanner(tuple(nodes), tuple(NetworkLink(**r) for r in raw["links"]),
-                               profiles, tuple(EdgeTransfer(**r) for r in raw["transfers"]))
+                               profiles, tuple(EdgeTransfer(**r) for r in raw["transfers"]),transfer_policy=raw.get('transfer_policy'))
     initial = raw["initial_state"]
     if set(initial) != {"node_used", "link_used"} or set(initial["node_used"]) != set(planner.nodes):
         raise ValueError("initial state must cover every simulated node")

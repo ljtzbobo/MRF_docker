@@ -19,6 +19,9 @@ from deployment.protocol import decode_packet, encode_packet
 from ..repositories import DocumentNotFound, InvalidDocument, JsonDocumentRepository
 from ..services import ResourceService, TaskService
 from ..services.executions import ExecutionJobs
+from datasets.catalog import DatasetCatalog,DatasetError
+from datasets.generator import generate as generate_dataset_task,compatibility as dataset_compatibility
+from datasets.execution import DatasetFrames
 
 
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
@@ -38,6 +41,7 @@ def create_app(task_service: TaskService | None = None,
         if task_service.deployment.pool.journal is None:
             task_service.deployment.pool.configure_persistence(os.environ['MRF_POOL_STATE'])
     execution_jobs = ExecutionJobs(task_service)
+    dataset_catalog=DatasetCatalog(os.environ.get('MRF_DATASET_ROOT',PROJECT_ROOT/'datasets'))
     @asynccontextmanager
     async def lifespan(_app):
         try:
@@ -48,6 +52,35 @@ def create_app(task_service: TaskService | None = None,
                 task_service.deployment.pool.shutdown()
     app = FastAPI(title="MRF Experiment API", version="0.1.0", lifespan=lifespan)
     app.state.execution_jobs = execution_jobs
+
+    @app.exception_handler(DatasetError)
+    async def invalid_dataset(_request,exc):
+        return JSONResponse(status_code=422,content={'detail':str(exc)})
+
+    @app.get('/api/v1/datasets')
+    def datasets_inventory():
+        return dataset_catalog.read()
+
+    @app.get('/api/v1/datasets/scenarios')
+    def dataset_scenarios():
+        return dataset_catalog.scenarios()
+
+    @app.post('/api/v1/datasets/tasks')
+    def dataset_task(payload: dict=Body(...)):
+        if not {'record_id','scenario_id'}<=payload.keys() or payload.keys()-{'record_id','scenario_id','experiment'}:
+            raise DatasetError('requires record_id, scenario_id and optional experiment')
+        bundle=generate_dataset_task(dataset_catalog,payload['scenario_id'],payload['record_id'],payload.get('experiment'))
+        return {**bundle,'compatibility':dataset_compatibility(bundle['task'])}
+
+    @app.post('/api/v1/datasets/executions')
+    def dataset_execution(payload: dict=Body(...)):
+        if task_service.deployment is None:raise HTTPException(status_code=503,detail='Execution environment is not configured')
+        if not {'task'}<=payload.keys() or payload.keys()-{'task','keep_warm'} or type(payload.get('keep_warm',False)) is not bool:
+            raise DatasetError('requires task and optional boolean keep_warm')
+        if not isinstance(payload['task'],dict):raise DatasetError('task must be an object')
+        frames=DatasetFrames(dataset_catalog,payload['task'])
+        try:return execution_jobs.submit(payload['task'],frames,keep_warm=payload.get('keep_warm',False))
+        except RuntimeError as exc:raise HTTPException(status_code=429,detail=str(exc)) from exc
 
     @app.exception_handler(DocumentNotFound)
     async def document_not_found(_request, exc: DocumentNotFound):

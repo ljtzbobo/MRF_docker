@@ -8,7 +8,7 @@ from matching import match_task
 from task_repr import (represent_external_task, represent_external_tasks,
                        represent_normalized_task, represent_template_variant,
                        validate_normalized_business_task, parse_external_task,
-                       refine_business_task, represent_task)
+                       represent_task)
 from components.runtime import DataPacket
 from resources.planner import ResourceUsage
 from scheduler import TaskScheduler
@@ -56,17 +56,19 @@ class TaskService:
             normalized = (parse_external_task(document)
                           if document["schema_version"] == "external_rf_task.v1"
                           else validate_normalized_business_task(document))
-            refinement = refine_business_task(normalized)
-            match = match_task(refinement)
-            if refinement.task is None or match.status != "MATCHED":
-                return {"task_id": refinement.task_id, "status": "UNMATCHED",
+            match = match_task(normalized)
+            task=match.specification_task
+            if task is None or match.status != "MATCHED":
+                return {"task_id": normalized['task_id'], "status": "UNMATCHED",
                         "match": match.to_dict()}
             if self.deployment is not None:
-                if keep_warm:
-                    return self.deployment.pool.preview(refinement.task, match).to_dict()
-                return self.deployment.scheduler.preview_placement(refinement.task, match).to_dict()
+                from matching.selection import select_composition
+                preview=self.deployment.pool.preview if keep_warm else self.deployment.scheduler.preview_placement
+                count=normalized['S']['data_input'].get('dataset_binding',{}).get('frame_count',1)
+                chosen,plan,selection=select_composition(match,lambda task,candidate:preview(task,candidate,frame_count=count))
+                return {**plan.to_dict(),'composition_selection':selection,'selected_match':chosen.to_dict()}
             used = ResourceUsage(**self.scheduler.snapshot()["used"])
-            plan = self.scheduler.planner.plan(refinement.task, match,
+            plan = self.scheduler.planner.plan(task, match,
                                                self.scheduler.capacity, used)
             return plan.to_dict()
         task = represent_task(document)
@@ -124,11 +126,19 @@ class TaskService:
             normalized = validate_normalized_business_task(document)
         else:
             raise ValueError("deployment requires an external or normalized business task")
-        refinement = refine_business_task(normalized)
-        match = match_task(refinement)
-        if refinement.task is None or match.status != "MATCHED":
+        match = match_task(normalized)
+        if match.specification_task is None or match.status != "MATCHED":
             raise DeploymentError(f"task is not fully matched: {match.to_dict()}")
         sequence = [frames] if isinstance(frames, Mapping) else frames
-        return self.deployment.execute(refinement.task, match, sequence,
+        from collections.abc import Sized
+        if not isinstance(sequence,Sized):sequence=tuple(sequence)
+        from matching.selection import select_composition,ReboundFrames
+        preview=self.deployment.pool.preview if keep_warm else self.deployment.scheduler.preview_placement
+        chosen,plan,selection=select_composition(match,lambda task,candidate:preview(task,candidate,frame_count=len(sequence)))
+        if match.execution_graph!=chosen.execution_graph:
+            sequence=ReboundFrames(sequence,match.execution_graph,chosen.execution_graph)
+        result=self.deployment.execute(chosen.specification_task, chosen, sequence,
                                        **({'progress': progress} if progress is not None else {}),
                                        **({'keep_warm': True} if keep_warm else {}))
+        if result.plan.dispatch is not None:result.plan.dispatch['composition_selection']=selection
+        return result

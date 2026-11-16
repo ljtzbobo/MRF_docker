@@ -8,3 +8,25 @@
 !**/processed/.gitkeep
 **/references/*
 !**/references/.gitkeep
+
+# Unsorted downloads are kept in place; only code/catalog/scenarios enter Git.
+*.sigmf-data
+*.sigmf-meta
+*.mat
+*.tgz
+*.tar
+*.tar.gz
+*.zip
+*.7z
+*.7z.*
+data1.7z/
+*.wav
+*.flac
+*.h5
+*.hdf5
+*.npy
+*.npz
+*.bin
+*.dat
+*.iq
+*.cf32

@@ -6,6 +6,7 @@ import { Activity, ArrowRight, Box, CheckCircle2, ChevronDown, CircleAlert, Cpu,
 import GraphPanel from './components/GraphPanel.vue'
 import DetailValue from './components/DetailValue.vue'
 import ExecutionPanel from './components/ExecutionPanel.vue'
+import DatasetPanel from './components/DatasetPanel.vue'
 import { api } from './api'
 import { spectrumSample } from './sample'
 import { useWorkbench } from './stores/workbench'
@@ -44,6 +45,7 @@ const executionHint = computed(() => {
   if (!store.resources?.configured) return '尚未配置容器部署'
   if (store.match?.status !== 'MATCHED') return '需要完整匹配的组件执行图'
   if (store.plan?.status !== 'FEASIBLE_ESTIMATE') return '资源分配尚不可行'
+  if (store.datasetFrameCount) return `${store.datasetFrameCount} 帧数据引用已绑定，执行时读取`
   if (!store.frames.length) return '等待输入帧'
   return `${store.frames.length} 帧已就绪`
 })
@@ -59,6 +61,10 @@ const statusText = computed(() => {
   if (store.match?.status === 'MATCHED') return '已匹配'
   if (store.match?.status === 'PARTIAL') return '部分匹配'
   if (store.match?.status === 'NEEDS_REFINEMENT') return '待细化'
+  if (store.match?.status === 'NEEDS_PARAMETERS') return '待补参数'
+  if (store.match?.status === 'MISSING_CAPABILITY') return '缺少组件能力'
+  if (store.match?.status === 'INFEASIBLE') return '无兼容组合'
+  if (store.match?.status === 'SEARCH_LIMIT') return '搜索达到上限'
   return store.representation ? '已表征' : '待上传'
 })
 const issues = computed(() => store.match?.unresolved ?? [])
@@ -265,6 +271,7 @@ onMounted(() => store.analyze(spectrumSample, '频谱分析样例'))
       <ResourcePanel v-if="view === 'resources'" />
       <div v-else class="task-view">
         <div class="section-heading"><div><div class="eyebrow">TASK / REPRESENTATION</div><h1>任务拆解</h1></div><span class="task-status" :class="{ 'task-status--warn': store.error || issues.length }"><span class="status-dot" :class="{ 'status-dot--ok': store.match?.status === 'MATCHED' }"></span>{{ statusText }}</span></div>
+        <DatasetPanel />
 
         <section class="upload-band" :class="{ 'upload-band--drag': dragOver }" @dragover.prevent="dragOver = true" @dragleave.prevent="dragOver = false" @drop.prevent="onDrop">
           <div class="upload-icon"><FileJson2 :size="21" /></div>
@@ -289,7 +296,7 @@ onMounted(() => store.analyze(spectrumSample, '频谱分析样例'))
         </section>
 
         <section v-if="store.parallelProgress.length" class="execution-band" aria-label="并发执行对比"><h2>并发执行对比</h2><p class="execution-file">下方链路与详细进度显示最后提交的任务。</p><div class="table-scroll"><table><thead><tr><th>任务</th><th>状态</th><th>完成帧</th><th>组件调用</th><th>实例取得方式</th></tr></thead><tbody><tr v-for="job in store.parallelProgress" :key="job.job_id"><td>{{ job.task_id }}</td><td>{{ job.state }}{{ job.stage === 'waiting_for_instance' ? ' · 等待实例' : '' }}</td><td>{{ job.completed_frames }} / {{ job.total_frames }}</td><td>{{ job.completed_calls }} / {{ job.total_calls }}</td><td>{{ parallelActions(job) }}</td></tr></tbody></table></div></section>
-        <ExecutionPanel :plan="store.plan" :progress="store.executionProgress" :input-frames="store.frames.length" />
+        <ExecutionPanel :plan="store.plan" :progress="store.executionProgress" :input-frames="store.datasetFrameCount || store.frames.length" />
 
         <section class="analysis-section">
           <div class="analysis-heading"><div><h2>功能链路</h2><span>{{ graphCount }}</span></div><div class="segmented" role="tablist" aria-label="图层"><button v-for="stage in stages" :key="stage.id" role="tab" :aria-selected="store.level === stage.id" :class="{ active: store.level === stage.id }" @click="store.setLevel(stage.id)">{{ stage.label }}</button></div></div>
@@ -300,6 +307,12 @@ onMounted(() => store.analyze(spectrumSample, '频谱分析样例'))
               <template v-else><div class="inspector-placeholder"><Box :size="25" :stroke-width="1.4" /><span>选择图中的节点查看契约与参数</span></div><div class="detail-row"><span>节点数量</span><strong>{{ graph?.nodes.length ?? 0 }}</strong></div><div class="detail-row"><span>连接数量</span><strong>{{ graph?.edges.length ?? 0 }}</strong></div><div v-if="store.match?.refined_graph?.uncovered_outputs?.length" class="detail-block"><span>未覆盖输出</span><p v-for="output in store.match.refined_graph.uncovered_outputs" :key="output">{{ output }}</p></div><div v-if="store.level === 'business'" class="representation-parts"><details v-for="part in representationParts" :key="part.key"><summary>{{ part.label }}<ChevronDown :size="14" /></summary><DetailValue :value="part.data" :resource="part.key === 'R'" /><div v-if="part.key === 'R' && store.plan?.unit_system === 'physical' && store.plan.node_demand" class="physical-preview"><h4>处理节点预留</h4><DetailValue :value="store.plan.node_demand" resource /></div></details></div></template>
             </aside>
           </div>
+        </section>
+        <section v-if="store.match?.composition?.mode === 'demand_driven'" class="issues-section">
+          <div class="band-heading"><h2>需求驱动组件装配 · B&amp;B</h2><span>{{ store.match.composition.candidate_count ?? 0 }} 个候选图</span></div>
+          <p>搜索 {{ store.match.composition.explored_states ?? 0 }} 个状态；所选组件结构代价 {{ store.match.composition.candidate_cost ?? store.match.composition.best_cost ?? '—' }}。
+            {{ store.match.composition.optimality_proven ? '已在声明的算子及参数范围内完成结构优化。' : '尚未证明结构最优；' + (store.match.composition.termination_reason ?? '检查缺失能力或参数') }}
+            实际硬件放置与时延可行性由模块三继续检查。</p>
         </section>
         <section v-if="issues.length" class="issues-section"><div class="band-heading"><h2>待处理项</h2><span>{{ issues.length }}</span></div><div v-for="(issue, index) in issues" :key="index" class="issue-row"><CircleAlert :size="17" /><span class="mono">{{ issue.code }}</span><p>{{ issue.detail }}</p><span v-if="issue.node_id" class="mono">{{ issue.node_id }}</span></div></section>
         <section v-if="store.plan?.issues && (store.plan.issues as string[]).length" class="issues-section"><div class="band-heading"><h2>分配诊断</h2><ChevronDown :size="17" /></div><div v-for="(issue, index) in store.plan.issues as string[]" :key="index" class="issue-row"><CircleAlert :size="17" /><p>{{ issue }}</p></div></section>

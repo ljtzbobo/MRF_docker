@@ -1,0 +1,15 @@
+{
+  "schema_version": "rf_dataset_scenario.v1",
+  "scenario_id": "atco_audio_review",
+  "title": "航空通信录音的语音内容分析需求",
+  "description": "以真实 PCM 录音构建航空语音业务任务；当前组件库尚无 ATCO2 自动语音识别执行链。",
+  "input_representation": "audio_pcm",
+  "task_type": "voice_communication",
+  "family": "communication",
+  "direction": "rx",
+  "request": {"call_mode": "recorded_atc_audio_review", "traffic": {"traffic_model": "recorded_audio"}},
+  "expected_output": ["speech_transcript"],
+  "builder": "business_only",
+  "defaults": {"frame_length": 320, "frame_count": 3, "priority": 5, "arrival_ms": 0, "deadline_after_ms": 1000},
+  "limitations": ["音频是已解调记录，不能作为原始 RF IQ。", "可进入模块一表征；语音识别链待实现，不会套用现有 OFDM 示例链冒充 ATC 解码。"]
+}

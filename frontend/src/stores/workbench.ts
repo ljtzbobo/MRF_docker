@@ -19,6 +19,7 @@ export const useWorkbench = defineStore('workbench', {
     match: null as MatchResult | null,
     plan: null as RecordValue | null,
     frames: [] as InputFrame[],
+    datasetFrameCount: 0,
     frameFileName: '',
     deployment: null as DeploymentResult | null,
     executing: false,
@@ -49,13 +50,16 @@ export const useWorkbench = defineStore('workbench', {
     },
     canExecute: (state) => Boolean(state.resources?.configured && !state.resourceError &&
       state.match?.status === 'MATCHED' &&
-      state.plan?.status === 'FEASIBLE_ESTIMATE' && state.frames.length && !state.busy && !state.executing),
+      state.plan?.status === 'FEASIBLE_ESTIMATE' && (state.frames.length || state.datasetFrameCount) && !state.busy && !state.executing),
   },
   actions: {
     async refreshPlan() {
       if (!this.task || this.match?.status !== 'MATCHED') return
       this.busy = true
-      try { this.plan = await api.plan(this.task, this.keepWarm) }
+      try {
+        this.plan = await api.plan(this.task, this.keepWarm)
+        if (this.plan.selected_match) this.match = this.plan.selected_match as unknown as MatchResult
+      }
       catch (error) { this.error = error instanceof Error ? error.message : '方案预览失败' }
       finally { this.busy = false }
     },
@@ -66,6 +70,8 @@ export const useWorkbench = defineStore('workbench', {
       this.match = null
       this.plan = null
       this.frames = []
+      const binding = ((task.data_input as RecordValue | undefined)?.dataset_binding as RecordValue | undefined)
+      this.datasetFrameCount = binding?.schema_version === 'rf_dataset_binding.v1' && typeof binding.frame_count === 'number' ? binding.frame_count : 0
       this.frameFileName = ''
       this.deployment = null
       this.executionError = ''
@@ -81,6 +87,7 @@ export const useWorkbench = defineStore('workbench', {
         this.match = await api.match(task)
         if (this.match.status === 'MATCHED') {
           this.plan = await api.plan(task, this.keepWarm)
+          if (this.plan.selected_match) this.match = this.plan.selected_match as unknown as MatchResult
         }
         await this.refreshResources()
       } catch (error) {
@@ -104,7 +111,9 @@ export const useWorkbench = defineStore('workbench', {
       this.deployment = null
       this.parallelProgress = []
       try {
-        this.executionProgress = await api.startExecution(this.task, this.frames, this.keepWarm)
+        this.executionProgress = this.datasetFrameCount
+          ? await api.startDatasetExecution(this.task, this.keepWarm)
+          : await api.startExecution(this.task, this.frames, this.keepWarm)
         this.level = 'component'
         while (this.executionProgress.state === 'QUEUED' || this.executionProgress.state === 'RUNNING') {
           await new Promise(resolve => setTimeout(resolve, 250))
@@ -131,8 +140,10 @@ export const useWorkbench = defineStore('workbench', {
       const errors: string[] = []
       try {
         const suffix = Date.now()
-        const submissions = await Promise.allSettled(['a', 'b'].map(label => api.startExecution(
-          { ...this.task!, task_id: `${this.task!.task_id}-parallel-${label}-${suffix}` }, this.frames, true)))
+        const submissions = await Promise.allSettled(['a', 'b'].map(label => {
+          const task = { ...this.task!, task_id: `${this.task!.task_id}-parallel-${label}-${suffix}` }
+          return this.datasetFrameCount ? api.startDatasetExecution(task,true) : api.startExecution(task,this.frames,true)
+        }))
         for (const result of submissions) {
           if (result.status === 'fulfilled') this.parallelProgress.push(result.value)
           else errors.push(result.reason instanceof Error ? result.reason.message : '并发提交失败')

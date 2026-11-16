@@ -2,6 +2,17 @@ export type RecordValue = Record<string, unknown>
 export type GraphLevel = 'business' | 'specification' | 'component'
 export type InputFrame = Record<string, RecordValue>
 
+export interface DatasetRecord {
+  record_id: string; title: string; adapter: string; status: string; path: string
+  signal: { representation: string; sample_rate_hz: number | null; center_frequency_hz: number | null; sample_count: number | null; observation_count?: number }
+  missing_metadata?: string[]
+}
+export interface DatasetScenario {
+  scenario_id: string; title: string; input_representation: string; builder: string
+  frequency_range_hz?: [number,number]
+  defaults: Record<string, number>; limitations: string[]
+}
+
 export interface ExecutionProgress {
   job_id: string; task_id: string; state: 'QUEUED' | 'RUNNING' | 'COMPLETED' | 'FAILED'
   stage: string; total_frames: number; completed_frames: number
@@ -56,6 +67,7 @@ export interface Representation {
 export interface MatchResult {
   task_id: string
   status: string
+  composition?: { mode: string; algorithm: string; explored_states?: number; candidate_count?: number; best_cost?: number; candidate_cost?: number; optimality_proven?: boolean; termination_reason?: string }
   refined_graph?: GraphData & { profile_id?: string; prerequisites?: string[]; uncovered_outputs?: string[] }
   execution_graph?: GraphData
   unresolved: Array<{ code: string; detail: string; node_id?: string }>

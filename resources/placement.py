@@ -286,11 +286,18 @@ class PlacementPlanner:
     """Optimize fixed CID bindings; all strategies share physical feasibility and serial cost."""
 
     def __init__(self, nodes: tuple[ProcessingNode, ...], links: tuple[NetworkLink, ...],
-                 measurements: MeasurementCatalog, transfers: tuple[EdgeTransfer, ...]):
+                 measurements: MeasurementCatalog, transfers: tuple[EdgeTransfer, ...], *, transfer_policy=None):
         self.nodes = {item.node_id: item for item in nodes}
         self.links = {(item.source, item.target): item for item in links}
         self.measurements = measurements
         self.transfers = {(item.source, item.target): item for item in transfers}
+        self.transfer_policy=deepcopy(transfer_policy)
+        if transfer_policy is not None:
+            if set(transfer_policy)!={'bytes_per_item','reserved_bytes_per_s'} or not isinstance(transfer_policy['bytes_per_item'],dict):
+                raise ValueError('transfer_policy needs explicit format byte widths and reserved bandwidth')
+            for fmt,width in transfer_policy['bytes_per_item'].items():
+                if not isinstance(fmt,str) or type(width) is not int or width<1:raise ValueError('invalid transfer byte width')
+            EdgeTransfer('policy-source','policy-target',0,transfer_policy['reserved_bytes_per_s'])
         if (len(self.nodes) != len(nodes) or len(self.links) != len(links) or
                 len(self.transfers) != len(transfers)):
             raise ValueError("processing nodes, links and transfers must have unique identifiers")
@@ -367,7 +374,18 @@ class PlacementPlanner:
         def diagnostic(status, issues):
             return PlacementPlan(task.task_id, status, (), {}, {}, {}, None, _time_limit(task),
                                  tuple(issues), frame_count=frame_count)
-        missing = sorted(set(edges) - set(self.transfers))
+        transfers=dict(self.transfers)
+        if self.transfer_policy is not None and isinstance(task,SpecificationTask) and task.G.profile_id=='demand_composition':
+            nodes={node.node_id:node for node in task.G.nodes}
+            for edge in task.G.edges:
+                source=nodes[edge.source]
+                width=self.transfer_policy['bytes_per_item'].get(source.outputs[edge.source_port])
+                length=source.parameters.get('output_block_length')
+                if width is not None and type(length) is int and length>0:
+                    transfers[(edge.source,edge.target)]=EdgeTransfer(edge.source,edge.target,length*width,
+                        self.transfer_policy['reserved_bytes_per_s'])
+                else:transfers.pop((edge.source,edge.target),None)
+        missing = sorted(set(edges) - set(transfers))
         if missing:
             return diagnostic("NEEDS_TRANSFER_PROFILE", [f"missing edge transfer profile: {a}->{b}"
                                                         for a, b in missing])
@@ -391,7 +409,7 @@ class PlacementPlanner:
         if missing:
             return diagnostic("NEEDS_CALIBRATION", missing)
         return PlacementProblem(task, match, state, order, options, self.nodes, self.links,
-                                self.transfers, edges, frame_count)
+                                transfers, edges, frame_count)
 
     def _finalize_plan(self, problem, outcome, algorithm):
         limit = _time_limit(problem.task)

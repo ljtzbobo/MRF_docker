@@ -1,4 +1,4 @@
-import type { DeploymentResult, ExecutionProgress, InputFrame, MatchResult, RecordValue, Representation, ResourceSnapshot } from './types'
+import type { DatasetRecord, DatasetScenario, DeploymentResult, ExecutionProgress, InputFrame, MatchResult, RecordValue, Representation, ResourceSnapshot } from './types'
 
 async function request<T>(path: string, body?: unknown): Promise<T> {
   const response = await fetch(`/api/v1${path}`, {
@@ -15,6 +15,10 @@ async function request<T>(path: string, body?: unknown): Promise<T> {
 }
 
 export const api = {
+  datasets: () => request<{ records: DatasetRecord[]; warnings: string[] }>('/datasets'),
+  datasetScenarios: () => request<DatasetScenario[]>('/datasets/scenarios'),
+  generateDatasetTask: (scenarioId: string, recordId: string, experiment: RecordValue) => request<{task: RecordValue; limitations: string[]; compatibility: {match_status: string}}>('/datasets/tasks',{scenario_id:scenarioId,record_id:recordId,experiment}),
+  startDatasetExecution: (task: RecordValue, keepWarm = false) => request<ExecutionProgress>('/datasets/executions',{task,keep_warm:keepWarm}),
   startExecution: (task: RecordValue, frames: InputFrame[], keepWarm = false) => request<ExecutionProgress>('/executions', { task, frames, keep_warm: keepWarm }),
   executionProgress: (id: string) => request<ExecutionProgress>(`/executions/${id}`),
   executionResult: (id: string) => request<DeploymentResult>(`/executions/${id}/result`),

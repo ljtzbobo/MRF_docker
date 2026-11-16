@@ -17,11 +17,15 @@ python -m uvicorn backend.api.app:app --reload
 
 默认地址为 `http://127.0.0.1:8000`，接口文档位于 `/docs`。`MRF_TASK_DIR` 和 `MRF_RESOURCE_DIR` 可指定其他 JSON 目录；文件名去掉 `.json` 后作为查询名称。
 
-任务 JSON 清单接口不等于真实数据集接口。原有七个业务 JSON 定位为合成接口测试；新下载的信号、标签与来源记录放在 [datasets](../datasets/README.md)，当前尚无自动数据集导入器。
+任务 JSON 清单接口不等于真实数据集接口。原有七个业务 JSON 定位为合成接口测试；真实记录由 [datasets 生成器](../datasets/README.md) 索引、构造外部任务并在执行时按帧读取。
 
 | 方法 | 路径 | 功能 |
 | --- | --- | --- |
 | GET | `/api/v1/health` | 健康检查 |
+| GET | `/api/v1/datasets` | 已登记的真实数据、来源及可读状态 |
+| GET | `/api/v1/datasets/scenarios` | 业务场景及实验默认参数 |
+| POST | `/api/v1/datasets/tasks` | 场景＋记录＋参数生成 external_rf_task.v1，不装入样本 |
+| POST | `/api/v1/datasets/executions` | 绑定的外部任务提交原异步执行管理器，适配器按需读取样本 |
 | GET | `/api/v1/tasks` | 列出任务文件 |
 | GET | `/api/v1/tasks/{name}` | 读取任务 JSON |
 | POST | `/api/v1/tasks/validate` | 校验细化任务 |

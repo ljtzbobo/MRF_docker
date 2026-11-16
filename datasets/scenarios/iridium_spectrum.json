@@ -1,0 +1,16 @@
+{
+  "schema_version": "rf_dataset_scenario.v1",
+  "scenario_id": "iridium_spectrum",
+  "title": "Iridium 独立突发的频谱观测",
+  "description": "显式选择 PLUTO1 的 QPSK 或 pilot 字段及一条 observation，进行频谱观测。",
+  "input_representation": "complex_iq",
+  "frequency_range_hz": [1616000000, 1626500000],
+  "task_type": "spectrum_analysis",
+  "family": "electronic_support",
+  "direction": "rx",
+  "request": {},
+  "expected_output": ["spectrum_psd"],
+  "builder": "ddc_fir_psd",
+  "defaults": {"frame_length": 2048, "frame_count": 1, "observation_index": 0, "decimation": 2, "nco_frequency_hz": 100000, "filter_cutoff": 0.25, "fft_length": 1024, "overlap": 0.5, "priority": 6, "arrival_ms": 0, "deadline_after_ms": 1000},
+  "limitations": ["已预处理的突发片段不是连续 RF 流，不跨 observation 拼接。", "频谱输出不等于 66 类卫星身份识别；短 BPSK 字段需缩小窗口并提供相应资源画像。"]
+}
